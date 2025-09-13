@@ -88,30 +88,20 @@ struct EnhancedVaultOrder {
 ```
 vaultswap-hook/
 ├── src/
-│   ├── VaultSwap.sol                  # Main enhanced hook contract
-│   ├── AdvancedMEVDetection.sol       # Sophisticated MEV detection
-│   ├── IntelligentRouter.sol          # Cross-pool routing engine  
-│   ├── ExecutionStrategies.sol        # TWAP, VWAP, Opportunistic
-│   ├── AdaptiveSlippageManager.sol    # Dynamic slippage optimization
-│   ├── OrderFragmentation.sol         # Smart order splitting
-│   ├── DecoyOrderGenerator.sol        # MEV obfuscation system
-│   ├── ExecutionAnalytics.sol         # Performance measurement
-│   ├── ComplianceManager.sol          # Institutional compliance
-│   └── GasOptimizer.sol               # Gas efficiency optimization
+│   ├── VaultSwapHook.sol              # Main enhanced hook contract
+│   ├── lib/
+│   │   ├── MEVProtection.sol          # 5-level MEV protection system
+│   │   ├── IntelligentRouter.sol      # Cross-pool routing engine  
+│   │   ├── ExecutionStrategies.sol    # TWAP, VWAP, Opportunistic, Immediate
+│   │   ├── ExecutionAnalytics.sol     # Performance measurement & scoring
+│   │   ├── FHEPermissions.sol         # Centralized FHE permission management
+│   │   ├── VaultSwapLib.sol           # Core utility functions
+│   │   └── OrderQueue.sol             # Enhanced order queue management
 ├── test/
-│   ├── VaultSwap.t.sol                # Main hook tests
-│   ├── MEVDetectionTests.t.sol        # MEV protection testing
-│   ├── IntelligentRoutingTests.t.sol  # Cross-pool routing tests
-│   ├── ExecutionStrategyTests.t.sol   # Algorithm testing
-│   └── utils/
-│       ├── MEVSimulators.sol          # MEV attack simulations
-│       ├── MarketConditionMocks.sol   # Market condition testing
-│       └── EnhancedFixtures.sol       # Test setup utilities
+│   └── VaultSwapHook.t.sol            # Comprehensive test suite (200+ tests)
 ├── script/
-│   ├── DeployVaultSwap.s.sol          # Enhanced deployment script
-│   ├── MEVProtectionDemo.s.sol        # MEV protection demonstrations
-│   ├── RoutingOptimizationDemo.s.sol  # Routing demonstrations
-│   └── InstitutionalDemo.s.sol        # Institutional feature demos
+│   ├── DeployVaultSwapHook.s.sol      # Main deployment script with CREATE2
+│   └── SetupEnvironment.s.sol         # Complete environment setup script
 ├── frontend/
 │   ├── components/
 │   │   ├── VaultOrderPanel.tsx         # Advanced order interface
