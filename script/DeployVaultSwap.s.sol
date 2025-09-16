@@ -8,7 +8,7 @@ import {IntelligentRouter} from "../src/IntelligentRouter.sol";
 import {ExecutionStrategies} from "../src/ExecutionStrategies.sol";
 import {VaultSwapAnalytics} from "../src/VaultSwapAnalytics.sol";
 import {InstitutionalFeatures} from "../src/InstitutionalFeatures.sol";
-import {IPoolManager} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 /**
  * @title DeployVaultSwap

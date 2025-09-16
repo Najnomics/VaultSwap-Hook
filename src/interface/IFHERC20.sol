@@ -1,33 +1,43 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity >=0.8.19 <0.9.0;
 
+// SPDX-License-Identifier: MIT
+// Fhenix Protocol (last updated v0.1.0) (token/FHERC20/IFHERC20.sol)
+// Inspired by OpenZeppelin (https://github.com/OpenZeppelin/openzeppelin-contracts) (token/ERC20/IERC20.sol)
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {InEuint128, euint128} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
-/**
- * @title IFHERC20
- * @notice Interface for FHE-enabled ERC20 tokens
- * @dev Defines the basic interface for tokens that support FHE operations
- */
-interface IFHERC20 {
-    /**
-     * @notice Mint encrypted tokens to a user
-     * @param user Address to mint tokens to
-     * @param amount Encrypted amount to mint
-     */
+interface IFHERC20 is IERC20 {
+    // -------- Public Mint / Burn Functions --------
+    function mint(address user, uint256 amount) external;
+    function burn(address user, uint256 amount) external;
+
+    // -------- Encrypted Mint Functions --------
     function mintEncrypted(address user, InEuint128 memory amount) external;
-    
-    /**
-     * @notice Transfer encrypted tokens
-     * @param to Address to transfer to
-     * @param amount Encrypted amount to transfer
-     * @return success Whether the transfer was successful
-     */
-    function transferEncrypted(address to, InEuint128 memory amount) external returns (bool success);
-    
-    /**
-     * @notice Get encrypted balance of a user
-     * @param user Address to check balance for
-     * @return balance Encrypted balance
-     */
-    function encBalances(address user) external view returns (euint128 balance);
+    function mintEncrypted(address user, euint128 amount) external;
+
+    // -------- Encrypted Burn Functions --------
+    function burnEncrypted(address user, InEuint128 memory amount) external;
+    function burnEncrypted(address user, euint128 amount) external;
+
+    // -------- Encrypted Transfer Functions --------
+    function transferFromEncrypted(address from, address to, InEuint128 memory amount) external returns (euint128);
+    function transferFromEncrypted(address from, address to, euint128 amount) external returns (euint128);
+
+    // -------- Decrypt Balance Functions --------
+    function decryptBalance(address user) external;
+    function getDecryptBalanceResult(address user) external view returns (uint128);
+    function getDecryptBalanceResultSafe(address user) external view returns (uint128, bool);
+
+    // -------- Encrypted Wrapping Functions --------
+    function wrap(address user, uint128 amount) external;
+
+    // -------- Encrypted Unwrapping Functions --------
+    function requestUnwrap(address user, InEuint128 memory amount) external returns (euint128);
+    function requestUnwrap(address user, euint128 amount) external returns (euint128);
+    function getUnwrapResult(address user, euint128 burnAmount) external returns (uint128);
+    function getUnwrapResultSafe(address user, euint128 burnAmount) external returns (uint128, bool);
+
+    // -------- View for encrypted balances --------
+    function encBalances(address user) external view returns (euint128);
 }

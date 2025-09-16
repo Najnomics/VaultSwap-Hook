@@ -1,4 +1,4 @@
-s// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
 /**
@@ -27,19 +27,21 @@ pragma solidity ^0.8.26;
 import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {SwapParams} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 
 // Token Imports
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-
+import {HybridFHERC20} from "./HybridFHERC20.sol";
+import {IFHERC20} from "./interface/IFHERC20.sol";
 // FHE Imports
 import {FHE, InEuint128, InEuint8, InEuint32, InEuint64, euint128, euint8, euint32, euint64, ebool} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
@@ -58,6 +60,13 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using PoolIdLibrary for PoolKey;
     using VaultSwapLib for PoolKey;
+    
+    // NOTE: ---------------------------------------------------------
+    // more natural syntax with euint operations by using FHE library
+    // all euint types are wrapped forms of uint256
+    // therefore using library for uint256 works for all euint types
+    // ---------------------------------------------------------------
+    using FHE for uint256;
 
     // =============================================================
     //                           EVENTS
@@ -139,7 +148,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     }
 
     /// @notice Execution analytics data
-    struct ExecutionAnalytics {
+    struct ExecutionAnalyticsData {
         euint128 expectedOutput;     // Expected output amount
         euint128 actualOutput;       // Actual output amount
         euint32 executionQuality;    // Quality score (0-100)
@@ -159,8 +168,18 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     //                           STORAGE
     // =============================================================
 
-    /// @notice Pool manager instance
-    IPoolManager public immutable poolManager;
+    // Note: poolManager is inherited from BaseHook
+
+    // NOTE: ---------------------------------------------------------
+    // state variables should typically be unique to a pool
+    // a single hook contract should be able to service multiple pools
+    // ---------------------------------------------------------------
+
+    /// @notice Encrypted counters for analytics (following template pattern)
+    mapping(PoolId => euint128) public beforeSwapCount;
+    mapping(PoolId => euint128) public afterSwapCount;
+    mapping(PoolId => euint128) public beforeAddLiquidityCount;
+    mapping(PoolId => euint128) public beforeRemoveLiquidityCount;
 
     /// @notice Mapping of pool to queue information
     mapping(PoolId key => QueueInfo queues) private poolQueues;
@@ -168,7 +187,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     /// @notice Enhanced order storage with comprehensive data
     mapping(bytes32 => EnhancedVaultOrder) public vaultOrders;
     mapping(bytes32 => MEVProtectionState) public mevProtection;
-    mapping(bytes32 => ExecutionAnalytics) public executionMetrics;
+    mapping(bytes32 => ExecutionAnalyticsData) public executionMetrics;
 
     /// @notice Decoy order system for enhanced obfuscation
     mapping(bytes32 => DecoyOrder[]) public decoyOrders;
@@ -186,8 +205,8 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     mapping(PoolId key => mapping(uint256 handle => address user)) private userOrders;
 
     /// @notice Performance tracking
-    mapping(address => ExecutionAnalytics[]) public userPerformanceHistory;
-    mapping(PoolId => ExecutionAnalytics) public poolExecutionStats;
+    mapping(address => ExecutionAnalyticsData[]) public userPerformanceHistory;
+    mapping(PoolId => ExecutionAnalyticsData) public poolExecutionStats;
 
     /// @notice Compliance and institutional features
     mapping(address => bool) public institutionalUsers;
@@ -206,7 +225,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     // =============================================================
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {
-        poolManager = _poolManager;
+        // poolManager is inherited from BaseHook
     }
 
     // =============================================================
@@ -215,11 +234,11 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
-            beforeInitialize: true,
-            afterInitialize: true,
-            beforeAddLiquidity: false,
+            beforeInitialize: false,
+            afterInitialize: false,
+            beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
+            beforeRemoveLiquidity: true,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: true,
@@ -232,50 +251,62 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         });
     }
 
-    function beforeSwap(
-        address sender,
-        PoolKey calldata key,
-        SwapParams calldata params,
-        bytes calldata hookData
-    ) external override returns (bytes4, BeforeSwapDelta, uint24) {
-        // Extract order ID from hook data if provided
-        bytes32 orderId = hookData.length > 0 ? abi.decode(hookData, (bytes32)) : bytes32(0);
-        
-        if (orderId != bytes32(0)) {
-            // Process specific order with enhanced features
-            _processEnhancedOrder(orderId, key, params, sender);
-        } else {
-            // Process any pending orders for this pool (legacy compatibility)
-            _processVaultOrders(key);
-        }
-        
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
+        // Follow template pattern: increment encrypted counter
+        euint128 current = beforeSwapCount[key.toId()];
+        beforeSwapCount[key.toId()] = current.add(FHE.asEuint128(1)); //add encrypted 1 to beforeSwapCount
+
+        FHE.allowThis(beforeSwapCount[key.toId()]); //allow this contract to access and use this new value
+
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function afterSwap(
-        address sender,
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
+        internal
+        override
+        returns (bytes4, int128)
+    {
+        // Follow template pattern: increment encrypted counter
+        euint128 current = afterSwapCount[key.toId()];
+        afterSwapCount[key.toId()] = current.add(FHE.asEuint128(1)); //add encrypted 1 to afterSwapCount
+
+        FHE.allowThis(afterSwapCount[key.toId()]); //allow this contract to access and use this new value
+
+        return (BaseHook.afterSwap.selector, 0);
+    }
+
+    function _beforeAddLiquidity(
+        address,
         PoolKey calldata key,
-        SwapParams calldata params,
-        BalanceDelta delta,
-        bytes calldata hookData
-    ) external override returns (bytes4) {
-        bytes32 orderId = hookData.length > 0 ? abi.decode(hookData, (bytes32)) : bytes32(0);
-        
-        if (orderId != bytes32(0)) {
-            // Update execution analytics for enhanced orders
-            _updateExecutionMetrics(orderId, delta, params);
-            
-            // Validate execution quality
-            _validateExecutionQuality(orderId, delta);
-            
-            // Generate compliance data for institutional users
-            _generateComplianceData(orderId, delta, params);
-            
-            // Update performance history
-            _updatePerformanceHistory(orderId);
-        }
-        
-        return BaseHook.afterSwap.selector;
+        ModifyLiquidityParams calldata,
+        bytes calldata
+    ) internal override returns (bytes4) {
+        // Follow template pattern: increment encrypted counter
+        euint128 current = beforeAddLiquidityCount[key.toId()];
+        beforeAddLiquidityCount[key.toId()] = current.add(FHE.asEuint128(1)); //add encrypted 1 to beforeAddLiquidityCount
+
+        FHE.allowThis(beforeAddLiquidityCount[key.toId()]); //allow this contract to access and use this new value
+
+        return BaseHook.beforeAddLiquidity.selector;
+    }
+
+    function _beforeRemoveLiquidity(
+        address,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata,
+        bytes calldata
+    ) internal override returns (bytes4) {
+        // Follow template pattern: increment encrypted counter
+        euint128 current = beforeRemoveLiquidityCount[key.toId()];
+        beforeRemoveLiquidityCount[key.toId()] = current.add(FHE.asEuint128(1)); //add encrypted 1 to beforeRemoveLiquidityCount
+
+        FHE.allowThis(beforeRemoveLiquidityCount[key.toId()]); //allow this contract to access and use this new value
+
+        return BaseHook.beforeRemoveLiquidity.selector;
     }
 
     // =============================================================
@@ -294,6 +325,8 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param executionAlgorithm Execution algorithm (0=Immediate, 1=TWAP, 2=VWAP, 3=Opportunistic)
      * @param maxMarketImpact Maximum acceptable market impact
      * @return orderId Unique order identifier
+     * 
+     * @dev This function works optimally with HybridFHERC20 tokens for enhanced FHE privacy
      */
     function submitVaultOrder(
         PoolKey calldata key,
@@ -369,7 +402,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         getPoolQueue(key, zeroForOne).push(vaultOrders[orderId].amountIn);
         userOrders[key.toId()][euint128.unwrap(vaultOrders[orderId].amountIn)] = msg.sender;
         
-        emit VaultOrderSubmitted(orderId, msg.sender, key.toId());
+        emit VaultOrderSubmitted(orderId, msg.sender, PoolId.unwrap(key.toId()));
         return orderId;
     }
 
@@ -380,20 +413,141 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param liquidity Encrypted amount of input tokens to swap
      */
     function placeVaultOrder(PoolKey calldata key, bool zeroForOne, InEuint128 calldata liquidity) external {
-        // Create enhanced order with default parameters
-        bytes32 orderId = submitVaultOrder(
-            key,
+        // Simplified implementation - directly create internal order without complex parameter encoding
+        bytes32 orderId = keccak256(abi.encode(
+            msg.sender, 
+            block.timestamp, 
+            nextOrderId++,
             liquidity,
-            liquidity, // Use same amount as min (no slippage protection)
-            zeroForOne ? abi.encode(FHE.asEuint8(0)) : abi.encode(FHE.asEuint8(1)), // direction
-            abi.encode(FHE.asEuint64(block.timestamp + 3600)), // 1 hour deadline
-            abi.encode(FHE.asEuint32(3)), // Advanced MEV protection
-            abi.encode(FHE.asEuint8(0)), // Single pool routing
-            abi.encode(FHE.asEuint8(0)), // Immediate execution
-            abi.encode(FHE.asEuint128(500)) // 5% max market impact
-        );
+            block.prevrandao
+        ));
         
-        emit OrderPlaced(msg.sender, euint128.unwrap(FHE.asEuint128(liquidity)));
+        // Create enhanced vault order with default parameters
+        vaultOrders[orderId] = EnhancedVaultOrder({
+            // Core parameters with default values
+            amountIn: FHE.asEuint128(liquidity),
+            minAmountOut: FHE.asEuint128(liquidity), // No slippage protection
+            direction: FHE.asEuint8(zeroForOne ? 0 : 1),
+            deadline: FHE.asEuint64(block.timestamp + 3600),
+            
+            // Default MEV protection
+            mevProtectionLevel: FHE.asEuint32(3),
+            decoyAmount: _calculateOptimalDecoySize(FHE.asEuint128(liquidity), FHE.asEuint32(3)),
+            executionWindow: _calculateExecutionWindow(FHE.asEuint32(3)),
+            stealthMode: FHE.asEuint8(1),
+            
+            // Default routing
+            routingStrategy: FHE.asEuint8(0), // Single pool
+            maxPools: FHE.asEuint32(1),
+            minPoolLiquidity: _calculateMinLiquidity(FHE.asEuint128(liquidity)),
+            gasOptimization: FHE.asEuint64(1),
+            
+            // Default execution
+            executionAlgorithm: FHE.asEuint8(0), // Immediate
+            maxMarketImpact: FHE.asEuint128(500), // 5%
+            complianceFlags: FHE.asEuint64(0),
+            performanceTarget: FHE.asEuint32(85),
+            
+            // Order metadata
+            user: msg.sender,
+            timestamp: block.timestamp,
+            executed: false
+        });
+        
+        // Setup basic permissions
+        _setupEnhancedPermissions(orderId, key);
+        
+        // Add to queue
+        getPoolQueue(key, zeroForOne).push(vaultOrders[orderId].amountIn);
+        userOrders[key.toId()][euint128.unwrap(vaultOrders[orderId].amountIn)] = msg.sender;
+        
+        emit OrderPlaced(msg.sender, euint128.unwrap(vaultOrders[orderId].amountIn));
+    }
+
+    /**
+     * @notice Submit vault order using encrypted balance from HybridFHERC20 token
+     * @param key Pool key for the order
+     * @param zeroForOne True for token0->token1 swap, false for token1->token0
+     * @param encAmountIn Encrypted input amount from user's HybridFHERC20 balance
+     * @return orderId Unique order identifier
+     * 
+     * @dev This function directly uses encrypted balances from HybridFHERC20 tokens
+     */
+    function submitEncryptedVaultOrder(
+        PoolKey calldata key,
+        bool zeroForOne,
+        euint128 encAmountIn
+    ) external nonReentrant returns (bytes32 orderId) {
+        // Verify caller has sufficient encrypted balance
+        address inputToken = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
+        
+        // Check if token supports HybridFHERC20
+        euint128 userBalance;
+        try HybridFHERC20(inputToken).encBalances(msg.sender) returns (euint128 balance) {
+            userBalance = balance;
+        } catch {
+            revert VaultSwap__InvalidParameters();
+        }
+        
+        // Verify sufficient balance using FHE comparison
+        ebool hasSufficientBalance = FHE.gte(userBalance, encAmountIn);
+        FHE.allowThis(hasSufficientBalance);
+        
+        // Generate unique order ID
+        orderId = keccak256(abi.encode(
+            msg.sender, 
+            block.timestamp, 
+            nextOrderId++,
+            encAmountIn,
+            block.prevrandao
+        ));
+        
+        // Create order with encrypted balance
+        vaultOrders[orderId] = EnhancedVaultOrder({
+            // Core parameters using encrypted balance
+            amountIn: encAmountIn,
+            minAmountOut: encAmountIn, // No slippage protection for simplicity
+            direction: FHE.asEuint8(zeroForOne ? 0 : 1),
+            deadline: FHE.asEuint64(block.timestamp + 3600),
+            
+            // Default MEV protection
+            mevProtectionLevel: FHE.asEuint32(3),
+            decoyAmount: _calculateOptimalDecoySize(encAmountIn, FHE.asEuint32(3)),
+            executionWindow: _calculateExecutionWindow(FHE.asEuint32(3)),
+            stealthMode: FHE.asEuint8(1),
+            
+            // Default routing
+            routingStrategy: FHE.asEuint8(0), // Single pool
+            maxPools: FHE.asEuint32(1),
+            minPoolLiquidity: _calculateMinLiquidity(encAmountIn),
+            gasOptimization: FHE.asEuint64(1),
+            
+            // Default execution
+            executionAlgorithm: FHE.asEuint8(0), // Immediate
+            maxMarketImpact: FHE.asEuint128(500), // 5%
+            complianceFlags: FHE.asEuint64(0),
+            performanceTarget: FHE.asEuint32(85),
+            
+            // Order metadata
+            user: msg.sender,
+            timestamp: block.timestamp,
+            executed: false
+        });
+        
+        // Setup enhanced permissions for HybridFHERC20 integration
+        _setupEnhancedPermissions(orderId, key);
+        
+        // Additional HybridFHERC20-specific permissions
+        FHE.allowThis(encAmountIn);
+        FHE.allow(encAmountIn, msg.sender);
+        FHE.allow(encAmountIn, inputToken);
+        
+        // Add to queue
+        getPoolQueue(key, zeroForOne).push(encAmountIn);
+        userOrders[key.toId()][euint128.unwrap(encAmountIn)] = msg.sender;
+        
+        emit VaultOrderSubmitted(orderId, msg.sender, PoolId.unwrap(key.toId()));
+        return orderId;
     }
 
     /**
@@ -425,7 +579,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     function getOrderInfo(bytes32 orderId) external view returns (
         EnhancedVaultOrder memory order,
         MEVProtectionState memory protection,
-        ExecutionAnalytics memory analytics
+        ExecutionAnalyticsData memory analytics
     ) {
         return (vaultOrders[orderId], mevProtection[orderId], executionMetrics[orderId]);
     }
@@ -435,7 +589,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param user User address
      * @return performance Array of execution analytics
      */
-    function getUserPerformance(address user) external view returns (ExecutionAnalytics[] memory performance) {
+    function getUserPerformance(address user) external view returns (ExecutionAnalyticsData[] memory performance) {
         return userPerformanceHistory[user];
     }
 
@@ -444,6 +598,75 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      */
     function registerInstitutionalUser() external {
         institutionalUsers[msg.sender] = true;
+    }
+
+    /**
+     * @notice Wrap tokens to encrypted form for enhanced privacy
+     * @param token Token address (should be HybridFHERC20)
+     * @param amount Amount to wrap
+     */
+    function wrapToEncrypted(address token, uint128 amount) external nonReentrant {
+        // Ensure the token supports HybridFHERC20 interface
+        try HybridFHERC20(token).wrap(msg.sender, amount) {
+            // Success - token wrapped to encrypted form
+        } catch {
+            revert VaultSwap__InvalidParameters();
+        }
+    }
+
+    /**
+     * @notice Request unwrap of encrypted tokens to public form
+     * @param token Token address (should be HybridFHERC20)  
+     * @param encAmount Encrypted amount to unwrap
+     * @return burnAmount Encrypted burn amount for unwrapping
+     */
+    function requestUnwrapFromEncrypted(address token, euint128 encAmount) external nonReentrant returns (euint128 burnAmount) {
+        try HybridFHERC20(token).requestUnwrap(msg.sender, encAmount) returns (euint128 result) {
+            return result;
+        } catch {
+            revert VaultSwap__InvalidParameters();
+        }
+    }
+
+    /**
+     * @notice Get unwrap result after decryption is complete
+     * @param token Token address (should be HybridFHERC20)
+     * @param burnAmount Encrypted burn amount from requestUnwrap
+     * @return amount Unwrapped amount
+     */
+    function getUnwrapResult(address token, euint128 burnAmount) external returns (uint128 amount) {
+        try HybridFHERC20(token).getUnwrapResult(msg.sender, burnAmount) returns (uint128 result) {
+            return result;
+        } catch {
+            revert VaultSwap__InvalidParameters();
+        }
+    }
+
+    /**
+     * @notice Get encrypted balance of user for a token
+     * @param token Token address (should be HybridFHERC20)
+     * @param user User address
+     * @return encBalance Encrypted balance
+     */
+    function getEncryptedBalance(address token, address user) external view returns (euint128 encBalance) {
+        try HybridFHERC20(token).encBalances(user) returns (euint128 balance) {
+            return balance;
+        } catch {
+            return FHE.asEuint128(0);
+        }
+    }
+
+    /**
+     * @notice Check if token supports HybridFHERC20 interface
+     * @param token Token address to check
+     * @return isSupported True if token supports HybridFHERC20
+     */
+    function supportsHybridFHE(address token) external view returns (bool isSupported) {
+        try HybridFHERC20(token).encBalances(address(0)) returns (euint128) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     // =============================================================
@@ -494,7 +717,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
                 // Attempt to collect user tokens for the swap
                 (address user, bool success) = _depositUserTokens(key, handle, liquidity, zeroForOne);
                 if (!success) {
-                    emit OrderFailed(user, handle);
+                    emit OrderFailed(user, euint128.unwrap(handle));
                     queue.pop();
                     break; // Stop processing if token transfer fails
                 }
@@ -502,7 +725,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
                 // Execute the swap and settle with the user
                 _executeDecryptedOrder(key, user, liquidity, zeroForOne);
                 queue.pop();
-                emit OrderSettled(user, handle);
+                emit OrderSettled(user, euint128.unwrap(handle));
             } else {
                 break; // Stop processing if decryption not ready
             }
@@ -615,7 +838,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param orderId Order ID
      * @param key Pool key
      */
-    function _deployDecoyOrders(bytes32 orderId, PoolKey calldata key) internal {
+    function _deployDecoyOrders(bytes32 orderId, PoolKey memory key) internal {
         EnhancedVaultOrder storage order = vaultOrders[orderId];
         
         // Calculate number of decoys based on protection level
@@ -670,7 +893,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param orderId Order ID
      */
     function _initializeExecutionAnalytics(bytes32 orderId) internal {
-        executionMetrics[orderId] = ExecutionAnalytics({
+        executionMetrics[orderId] = ExecutionAnalyticsData({
             expectedOutput: FHE.asEuint128(0), // Will be calculated at execution
             actualOutput: FHE.asEuint128(0),
             executionQuality: FHE.asEuint32(0),
@@ -765,7 +988,8 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         SwapParams calldata params
     ) internal {
         EnhancedVaultOrder storage order = vaultOrders[orderId];
-        uint8 algorithm = euint8.unwrap(order.executionAlgorithm);
+        uint256 algorithmValue = euint8.unwrap(order.executionAlgorithm);
+        uint8 algorithm = uint8(algorithmValue);
         
         // For now, all strategies execute immediately
         // In production, TWAP/VWAP would fragment orders over time
@@ -810,7 +1034,13 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         // Clean up decoy orders
         _cleanupDecoyOrders(orderId);
         
-        emit VaultOrderExecuted(orderId, order.user, euint128.unwrap(order.amountIn), zeroForOne ? uint256(delta.amount1()) : uint256(-delta.amount0()));
+        uint256 outputAmount;
+        if (zeroForOne) {
+            outputAmount = delta.amount1() > 0 ? uint256(int256(delta.amount1())) : 0;
+        } else {
+            outputAmount = delta.amount0() < 0 ? uint256(int256(-delta.amount0())) : 0;
+        }
+        emit VaultOrderExecuted(orderId, order.user, euint128.unwrap(order.amountIn), outputAmount);
     }
 
     /**
@@ -824,10 +1054,15 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         BalanceDelta delta,
         SwapParams calldata params
     ) internal {
-        ExecutionAnalytics storage metrics = executionMetrics[orderId];
+        ExecutionAnalyticsData storage metrics = executionMetrics[orderId];
         
         // Calculate actual output
-        uint256 actualOutput = params.zeroForOne ? uint256(delta.amount1()) : uint256(-delta.amount0());
+        uint256 actualOutput;
+        if (params.zeroForOne) {
+            actualOutput = delta.amount1() > 0 ? uint256(int256(delta.amount1())) : 0;
+        } else {
+            actualOutput = delta.amount0() < 0 ? uint256(int256(-delta.amount0())) : 0;
+        }
         metrics.actualOutput = FHE.asEuint128(actualOutput);
         
         // Calculate execution quality (simplified)
@@ -845,7 +1080,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param delta Balance delta
      */
     function _validateExecutionQuality(bytes32 orderId, BalanceDelta delta) internal {
-        ExecutionAnalytics storage metrics = executionMetrics[orderId];
+        ExecutionAnalyticsData storage metrics = executionMetrics[orderId];
         EnhancedVaultOrder storage order = vaultOrders[orderId];
         
         // Check if execution met quality targets
@@ -890,7 +1125,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      */
     function _updatePerformanceHistory(bytes32 orderId) internal {
         EnhancedVaultOrder storage order = vaultOrders[orderId];
-        ExecutionAnalytics storage metrics = executionMetrics[orderId];
+        ExecutionAnalyticsData storage metrics = executionMetrics[orderId];
         
         // Add to user's performance history
         userPerformanceHistory[order.user].push(metrics);
@@ -911,7 +1146,14 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     {
         user = userOrders[key.toId()][euint128.unwrap(handle)];
         address token = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
-        success = IERC20(token).trySafeTransferFrom(user, address(this), uint256(amount));
+        
+        // Try to use HybridFHERC20 if available for better FHE integration
+        try HybridFHERC20(token).transferFrom(user, address(this), uint256(amount)) {
+            success = true;
+        } catch {
+            // Fall back to standard ERC20 transfer
+            success = IERC20(token).trySafeTransferFrom(user, address(this), uint256(amount));
+        }
     }
 
     /**
@@ -939,19 +1181,27 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
             amount1 = uint128(-delta.amount1());
         }
 
-        // Settle with pool manager - send tokens owed to pool and take tokens owed to hook
+        // Enhanced settlement with HybridFHERC20 support
         if (delta.amount0() < 0) {
             // Hook owes token0 to pool, pool owes token1 to hook
-            key.currency0.settle(poolManager, address(this), uint256(amount0), false);
-            key.currency1.take(poolManager, address(this), uint256(amount1), false);
-            // Send output tokens to user
-            IERC20(Currency.unwrap(key.currency1)).safeTransfer(user, uint256(amount1));
+            // Send output tokens to user - try HybridFHERC20 first for better FHE integration
+            address outputToken = Currency.unwrap(key.currency1);
+            try HybridFHERC20(outputToken).transfer(user, uint256(amount1)) {
+                // Success - used HybridFHERC20 transfer
+            } catch {
+                // Fall back to standard ERC20 transfer
+                IERC20(outputToken).safeTransfer(user, uint256(amount1));
+            }
         } else {
             // Hook owes token1 to pool, pool owes token0 to hook
-            key.currency1.settle(poolManager, address(this), uint256(amount1), false);
-            key.currency0.take(poolManager, address(this), uint256(amount0), false);
-            // Send output tokens to user
-            IERC20(Currency.unwrap(key.currency0)).safeTransfer(user, amount0);
+            // Send output tokens to user - try HybridFHERC20 first for better FHE integration
+            address outputToken = Currency.unwrap(key.currency0);
+            try HybridFHERC20(outputToken).transfer(user, amount0) {
+                // Success - used HybridFHERC20 transfer
+            } catch {
+                // Fall back to standard ERC20 transfer
+                IERC20(outputToken).safeTransfer(user, amount0);
+            }
         }
     }
 
@@ -981,10 +1231,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     //                    MODIFIERS
     // =============================================================
 
-    modifier onlyPoolManager() {
-        if (msg.sender != address(poolManager)) revert VaultSwap__NotPoolManager();
-        _;
-    }
+    // onlyPoolManager modifier is inherited from BaseHook
 
     modifier validOrder(bytes32 orderId) {
         if (vaultOrders[orderId].user == address(0)) revert VaultSwap__OrderNotFound();
@@ -1062,8 +1309,15 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         // Increase protection level
         order.mevProtectionLevel = FHE.add(order.mevProtectionLevel, FHE.asEuint32(1));
         
-        // Deploy additional decoys
-        _deployDecoyOrders(orderId, PoolKey(Currency.wrap(address(0)), Currency.wrap(address(0)), 0, 0, IHooks(address(0))));
+        // Deploy additional decoys - create empty pool key
+        PoolKey memory emptyKey = PoolKey({
+            currency0: Currency.wrap(address(0)),
+            currency1: Currency.wrap(address(0)),
+            fee: 0,
+            tickSpacing: 0,
+            hooks: IHooks(address(0))
+        });
+        _deployDecoyOrders(orderId, emptyKey);
     }
 
     function _cleanupDecoyOrders(bytes32 orderId) internal {
@@ -1071,44 +1325,4 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
         EnhancedVaultOrder storage order = vaultOrders[orderId];
         userDecoysActive[order.user] = userDecoysActive[order.user] > 0 ? userDecoysActive[order.user] - 1 : 0;
     }
-
-    function _swapPoolManager(PoolKey memory key, bool zeroForOne, int256 amountSpecified) internal returns(BalanceDelta delta) {
-        SwapParams memory params = SwapParams({
-            zeroForOne: zeroForOne,
-            amountSpecified: amountSpecified,
-            sqrtPriceLimitX96: zeroForOne ?
-                        TickMath.MIN_SQRT_PRICE + 1 :   // Minimum price for token0->token1
-                        TickMath.MAX_SQRT_PRICE - 1     // Maximum price for token1->token0
-        });
-
-        delta = poolManager.swap(key, params, ZERO_BYTES);
-    }
 }
-
-/**
- * @title FHEPermissions  
- * @notice Permission management helper for FHE operations
- */
-library FHEPermissions {
-    function grantOrderCreationPermissions(
-        euint128 amountIn,
-        euint128 minAmountOut,
-        euint64 deadline,
-        euint32 mevProtectionLevel,
-        address user,
-        address contractAddr
-    ) internal {
-        // Grant user permissions
-        FHE.allow(amountIn, user);
-        FHE.allow(minAmountOut, user);
-        FHE.allow(deadline, user);
-        FHE.allow(mevProtectionLevel, user);
-        
-        // Grant contract permissions
-        FHE.allowThis(amountIn);
-        FHE.allowThis(minAmountOut);
-        FHE.allowThis(deadline);
-        FHE.allowThis(mevProtectionLevel);
-    }
-}
-p

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.24;
 
-// Foundry Imports
+//Foundry Imports
 import "forge-std/Test.sol";
 
-// Uniswap Imports
+//Uniswap Imports
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -13,69 +13,46 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-
-// Test Utilities
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
-
-// FHE Imports
-import {FHE, euint128, euint64, euint32, euint8, ebool, InEuint128, InEuint64, InEuint32, InEuint8, InEbool} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
-import {CoFheTest} from "@fhenixprotocol/cofhe-mock-contracts/CoFheTest.sol";
-
-// Project Imports
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {VaultSwapHook} from "../src/VaultSwapHook.sol";
-import {MEVProtection} from "../src/lib/MEVProtection.sol";
-import {ExecutionStrategies} from "../src/lib/ExecutionStrategies.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {Constants} from "@uniswap/v4-core/test/utils/Constants.sol";
+import {SortTokens} from "./utils/SortTokens.sol";
 
-// Mock FHE Token for Testing
-contract MockFHEToken {
-    string public name;
-    string public symbol;
-    uint8 public decimals = 18;
-    uint256 public totalSupply;
-    
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-    
-    event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-    
-    constructor(string memory _name, string memory _symbol) {
-        name = _name;
-        symbol = _symbol;
-    }
-    
-    function transfer(address to, uint256 amount) external returns (bool) {
-        require(balanceOf[msg.sender] >= amount, "Insufficient balance");
-        balanceOf[msg.sender] -= amount;
-        balanceOf[to] += amount;
-        emit Transfer(msg.sender, to, amount);
-        return true;
-    }
-    
-    function approve(address spender, uint256 amount) external returns (bool) {
-        allowance[msg.sender][spender] = amount;
-        emit Approval(msg.sender, spender, amount);
-        return true;
-    }
-    
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
-        totalSupply += amount;
-        emit Transfer(address(0), to, amount);
-    }
-}
+import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
+import {EasyPosm} from "./utils/EasyPosm.sol";
+import {Fixtures} from "./utils/Fixtures.sol";
 
-contract VaultSwapHookSimpleTest is Test, Deployers, CoFheTest {
+//FHE Imports
+import {FHE, InEuint128, euint128} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+import {CoFheTest} from "@fhenixprotocol/cofhe-foundry-mocks/CoFheTest.sol";
+import {HybridFHERC20} from "../src/HybridFHERC20.sol";
+import {IFHERC20} from "../src/interface/IFHERC20.sol";
+
+contract VaultSwapHookSimpleTest is Test, Fixtures {
+    using EasyPosm for IPositionManager;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
+    using StateLibrary for IPoolManager;
+
+    //test instance with useful utilities for testing FHE contracts locally
+    CoFheTest CFT;
 
     VaultSwapHook hook;
-    PoolKey poolKey;
     PoolId poolId;
-    MockFHEToken token0;
-    MockFHEToken token1;
+
+    HybridFHERC20 fheToken0;
+    HybridFHERC20 fheToken1;
+
+    Currency fheCurrency0;
+    Currency fheCurrency1;
+
+    uint256 tokenId;
+    int24 tickLower;
+    int24 tickUpper;
+
+    address private user = makeAddr("user");
     
     // Test users
     address alice = makeAddr("alice");
@@ -86,46 +63,117 @@ contract VaultSwapHookSimpleTest is Test, Deployers, CoFheTest {
     uint256 constant TEST_AMOUNT = 1 ether;
 
     function setUp() public {
-        // Deploy core Uniswap V4 contracts
+        //initialise new CoFheTest instance with logging turned off
+        CFT = new CoFheTest(false);
+
+        bytes memory token0Args = abi.encode("TOKEN0", "TOK0");
+        deployCodeTo("HybridFHERC20.sol:HybridFHERC20", token0Args, address(123));
+
+        bytes memory token1Args = abi.encode("TOKEN1", "TOK1");
+        deployCodeTo("HybridFHERC20.sol:HybridFHERC20", token1Args, address(456));
+
+        fheToken0 = HybridFHERC20(address(123));
+        fheToken1 = HybridFHERC20(address(456));    //ensure address token1 always > address token0
+
+        vm.label(user, "user");
+        vm.label(address(this), "test");
+        vm.label(address(fheToken0), "token0");
+        vm.label(address(fheToken1), "token1");
+
+        // creates the pool manager, utility routers, and test tokens
         deployFreshManagerAndRouters();
-        
-        // Deploy FHE test tokens
-        token0 = new MockFHEToken("Test Token 0", "TT0");
-        token1 = new MockFHEToken("Test Token 1", "TT1");
-        
-        // Ensure token0 < token1 for Uniswap V4
-        if (address(token0) > address(token1)) {
-            (token0, token1) = (token1, token0);
-        }
-        
-        // Mint tokens to test accounts
-        token0.mint(alice, 1000 ether);
-        token1.mint(alice, 1000 ether);
-        token0.mint(bob, 1000 ether);
-        token1.mint(bob, 1000 ether);
-        
-        // Deploy hook with proper flags
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | 
-            Hooks.AFTER_SWAP_FLAG |
-            Hooks.BEFORE_INITIALIZE_FLAG |
-            Hooks.AFTER_INITIALIZE_FLAG
+
+        vm.startPrank(user);
+        (fheCurrency0, fheCurrency1) = mintAndApprove2Currencies(address(fheToken0), address(fheToken1));
+
+        deployAndApprovePosm(manager);
+
+        // Deploy the hook to an address with the correct flags
+        address flags = address(
+            uint160(
+                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+            ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
-        
-        deployCodeTo("VaultSwapHook.sol", abi.encode(manager), address(flags));
-        hook = VaultSwapHook(address(flags));
-        
-        // Initialize pool
-        poolKey = PoolKey({
-            currency0: Currency.wrap(address(token0)),
-            currency1: Currency.wrap(address(token1)),
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(hook)
-        });
-        poolId = poolKey.toId();
-        
-        manager.initialize(poolKey, SQRT_RATIO_1_1, ZERO_BYTES);
+        bytes memory constructorArgs = abi.encode(manager); //Add all the necessary constructor arguments from the hook
+        deployCodeTo("VaultSwapHook.sol:VaultSwapHook", constructorArgs, flags);
+        hook = VaultSwapHook(flags);
+
+        vm.label(address(hook), "hook");
+        vm.label(address(this), "test");
+
+        // Create the pool
+        PoolKey memory key = PoolKey(currency0, currency1, 3000, 60, IHooks(hook));
+        poolId = key.toId();
+        manager.initialize(key, SQRT_PRICE_1_1);
+
+        // Provide full-range liquidity to the pool
+        tickLower = TickMath.minUsableTick(key.tickSpacing);
+        tickUpper = TickMath.maxUsableTick(key.tickSpacing);
+
+        uint128 liquidityAmount = 100e18;
+
+        (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            SQRT_PRICE_1_1,
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickUpper),
+            liquidityAmount
+        );
+
+        (tokenId,) = posm.mint(
+            key,
+            tickLower,
+            tickUpper,
+            liquidityAmount,
+            amount0Expected + 1,
+            amount1Expected + 1,
+            address(this),
+            block.timestamp,
+            ZERO_BYTES
+        );
+
+        vm.stopPrank();
+    }
+
+    //
+    //      ... Helper Functions ...
+    //
+    function mintAndApprove2Currencies(address tokenA, address tokenB) internal returns (Currency, Currency) {
+        Currency _currencyA = mintAndApproveCurrency(tokenA);
+        Currency _currencyB = mintAndApproveCurrency(tokenB);
+
+        (currency0, currency1) =
+            SortTokens.sort(Currency.unwrap(_currencyA),Currency.unwrap(_currencyB));
+        return (currency0, currency1);
+    }
+
+    function mintAndApproveCurrency(address token) internal returns (Currency currency) {
+        IFHERC20(token).mint(user, 2 ** 250);
+        IFHERC20(token).mint(address(this), 2 ** 250);
+
+        //InEuint128 memory amount = CFT.createInEuint128(2 ** 120, address(this));
+        InEuint128 memory amountUser = CFT.createInEuint128(2 ** 120, user);
+
+        //IFHERC20(token).mintEncrypted(address(this), amount);
+        IFHERC20(token).mintEncrypted(user, amountUser);
+
+        address[9] memory toApprove = [
+            address(swapRouter),
+            address(swapRouterNoChecks),
+            address(modifyLiquidityRouter),
+            address(modifyLiquidityNoChecks),
+            address(donateRouter),
+            address(takeRouter),
+            address(claimsRouter),
+            address(nestedActionRouter.executor()),
+            address(actionsRouter)
+        ];
+
+        for (uint256 i = 0; i < toApprove.length; i++) {
+            IFHERC20(token).approve(toApprove[i], Constants.MAX_UINT256);
+        }
+
+        return Currency.wrap(token);
     }
 
     // =============================================================

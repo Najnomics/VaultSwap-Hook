@@ -8,8 +8,8 @@ import {IntelligentRouter} from "../src/IntelligentRouter.sol";
 import {ExecutionStrategies} from "../src/ExecutionStrategies.sol";
 import {VaultSwapAnalytics} from "../src/VaultSwapAnalytics.sol";
 import {InstitutionalFeatures} from "../src/InstitutionalFeatures.sol";
-import {PoolKey} from "@uniswap/v4-core/contracts/types/PoolKey.sol";
-import {Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {euint128, ebool, euint8, euint32, euint64, FHE} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 /**
