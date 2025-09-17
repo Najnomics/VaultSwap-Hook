@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {VaultSwapHook} from "./VaultSwapHook.sol";
+import {VaultSwapHook} from "../hooks/VaultSwapHook.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {InEuint128, InEuint8, InEuint32, InEuint64} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 

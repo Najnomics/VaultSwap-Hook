@@ -3,7 +3,7 @@
 pragma solidity ^0.8.25;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IFHERC20} from "./interface/IFHERC20.sol";
+import {IFHERC20} from "../interfaces/IFHERC20.sol";
 import {FHE, InEuint128, euint128} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 /**

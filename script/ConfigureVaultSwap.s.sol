@@ -2,14 +2,15 @@
 pragma solidity ^0.8.25;
 
 import {Script, console} from "forge-std/Script.sol";
-import {VaultSwap} from "../src/VaultSwap.sol";
-import {AdvancedMEVDetection} from "../src/AdvancedMEVDetection.sol";
-import {IntelligentRouter} from "../src/IntelligentRouter.sol";
-import {ExecutionStrategies} from "../src/ExecutionStrategies.sol";
-import {VaultSwapAnalytics} from "../src/VaultSwapAnalytics.sol";
-import {InstitutionalFeatures} from "../src/InstitutionalFeatures.sol";
+import {VaultSwap} from "../src/tokens/VaultSwap.sol";
+import {AdvancedMEVDetection} from "../src/strategies/AdvancedMEVDetection.sol";
+import {IntelligentRouter} from "../src/routers/IntelligentRouter.sol";
+import {ExecutionStrategies} from "../src/strategies/ExecutionStrategies.sol";
+import {VaultSwapAnalytics} from "../src/analytics/VaultSwapAnalytics.sol";
+import {InstitutionalFeatures} from "../src/strategies/InstitutionalFeatures.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {euint128, ebool, euint8, euint32, euint64, FHE} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 /**
@@ -18,8 +19,6 @@ import {euint128, ebool, euint8, euint32, euint64, FHE} from "@fhenixprotocol/co
  * @dev Handles post-deployment configuration, pool setup, and system initialization
  * 
  * @author VaultSwap Team
- * @version 1.0.0
- * @since 2024-01-01
  * 
  * @custom:configuration This script configures all VaultSwap contracts after deployment
  * @custom:setup Includes pool registration, parameter tuning, and system initialization
@@ -164,7 +163,7 @@ contract ConfigureVaultSwap is Script {
         // Token pairs (WETH/USDC, WETH/USDT, etc.)
         config.tokenPairs = [
             0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, // WETH
-            0xA0b86a33E6441b8c4C8C0d4b0c8d8c8d8c8d8c8d, // USDC
+            0xa0b86A33e6441B8c4c8C0D4b0c8D8C8D8c8D8c8D, // USDC
             0xdAC17F958D2ee523a2206206994597C13D831ec7, // USDT
             0x6B175474E89094C44Da98b954EedeAC495271d0F  // DAI
         ];
@@ -173,7 +172,7 @@ contract ConfigureVaultSwap is Script {
         config.fees = [500, 3000, 10000]; // 0.05%, 0.3%, 1%
         
         // Tick spacings
-        config.tickSpacings = [10, 60, 200];
+        config.tickSpacings = [int24(10), int24(60), int24(200)];
         
         // MEV protection levels
         config.protectionLevels = [1, 2, 3, 4, 5];
@@ -210,7 +209,7 @@ contract ConfigureVaultSwap is Script {
         
         // Similar configuration to Ethereum but with Arbitrum-specific parameters
         config.fees = [500, 3000, 10000];
-        config.tickSpacings = [10, 60, 200];
+        config.tickSpacings = [int24(10), int24(60), int24(200)];
         config.protectionLevels = [1, 2, 3, 4, 5];
         config.decoyCounts = [2, 3, 5, 8, 12];
         config.executionDelays = [30, 60, 120, 300, 600];
@@ -233,13 +232,13 @@ contract ConfigureVaultSwap is Script {
         config.tokenPairs = [
             0x4200000000000000000000000000000000000006, // WETH
             0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, // USDC
-            0x50c5725949A6F0c72E6C4a641F24749C5c0C945,  // cbETH
+            0x50c5725949a6f0c72e6c4A641F24749C5c0c9450,  // cbETH
             0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22  // DAI
         ];
         
         // Base-specific configuration
         config.fees = [500, 3000, 10000];
-        config.tickSpacings = [10, 60, 200];
+        config.tickSpacings = [int24(10), int24(60), int24(200)];
         config.protectionLevels = [1, 2, 3, 4, 5];
         config.decoyCounts = [2, 3, 5, 8, 12];
         config.executionDelays = [30, 60, 120, 300, 600];
@@ -265,7 +264,7 @@ contract ConfigureVaultSwap is Script {
         ];
         
         config.fees = [3000];
-        config.tickSpacings = [60];
+        config.tickSpacings = [int24(60)];
         config.protectionLevels = [1, 2, 3];
         config.decoyCounts = [1, 2, 3];
         config.executionDelays = [10, 30, 60];
@@ -291,7 +290,7 @@ contract ConfigureVaultSwap is Script {
         ];
         
         config.fees = [3000];
-        config.tickSpacings = [60];
+        config.tickSpacings = [int24(60)];
         config.protectionLevels = [1, 2, 3];
         config.decoyCounts = [1, 2, 3];
         config.executionDelays = [10, 30, 60];
@@ -317,7 +316,7 @@ contract ConfigureVaultSwap is Script {
         ];
         
         config.fees = [3000];
-        config.tickSpacings = [60];
+        config.tickSpacings = [int24(60)];
         config.protectionLevels = [1, 2, 3];
         config.decoyCounts = [1, 2, 3];
         config.executionDelays = [30, 60, 120];
@@ -434,7 +433,7 @@ contract ConfigureVaultSwap is Script {
                     currency1: Currency.wrap(token1),
                     fee: config.fees[0],
                     tickSpacing: config.tickSpacings[0],
-                    hooks: config.vaultSwap
+                    hooks: IHooks(config.vaultSwap)
                 });
                 
                 // Add pool to router

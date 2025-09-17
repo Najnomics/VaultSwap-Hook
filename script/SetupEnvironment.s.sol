@@ -10,7 +10,7 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
-import {VaultSwapHook} from "../src/VaultSwapHook.sol";
+import {VaultSwapHook} from "../src/hooks/VaultSwapHook.sol";
 
 /**
  * @title SetupEnvironment
@@ -199,9 +199,9 @@ contract SetupEnvironment is Script {
         // Initialize pools with 1:1 price
         uint160 sqrtPriceX96 = 79228162514264337593543950336; // SQRT_RATIO_1_1
 
-        poolManager.initialize(pools.token0Token1Pool, sqrtPriceX96, "");
-        poolManager.initialize(pools.wethUsdcPool, sqrtPriceX96, "");
-        poolManager.initialize(pools.wethUsdtPool, sqrtPriceX96, "");
+        poolManager.initialize(pools.token0Token1Pool, sqrtPriceX96);
+        poolManager.initialize(pools.wethUsdcPool, sqrtPriceX96);
+        poolManager.initialize(pools.wethUsdtPool, sqrtPriceX96);
 
         // Get pool IDs
         pools.token0Token1PoolId = pools.token0Token1Pool.toId();
@@ -331,8 +331,9 @@ contract SetupEnvironment is Script {
             abi.encode(name, symbol, totalSupply)
         );
         
+        bytes32 salt = keccak256(abi.encode(name, symbol));
         assembly {
-            tokenAddress := create2(0, add(bytecode, 0x20), mload(bytecode), keccak256(abi.encode(name, symbol)))
+            tokenAddress := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
         }
         
         require(tokenAddress != address(0), "Token deployment failed");
@@ -430,7 +431,7 @@ contract SetupEnvironment is Script {
         IERC20(tokens.usdc).transfer(account, amount);
         IERC20(tokens.usdt).transfer(account, amount);
 
-        console.log("Funded account:", account, "with", amount, "of each token");
+        console.log("Funded account with tokens");
     }
 
     /**

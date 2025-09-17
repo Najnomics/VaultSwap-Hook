@@ -40,19 +40,19 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 // Token Imports
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {HybridFHERC20} from "./HybridFHERC20.sol";
-import {IFHERC20} from "./interface/IFHERC20.sol";
+import {HybridFHERC20} from "../tokens/HybridFHERC20.sol";
+import {IFHERC20} from "../interfaces/IFHERC20.sol";
 // FHE Imports
 import {FHE, InEuint128, InEuint8, InEuint32, InEuint64, euint128, euint8, euint32, euint64, ebool} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 // Local Library Imports
-import {VaultSwapLib} from "./lib/VaultSwapLib.sol";
-import {OrderQueue} from "./lib/OrderQueue.sol";
-import {MEVProtection} from "./lib/MEVProtection.sol";
-import {ExecutionStrategies} from "./lib/ExecutionStrategies.sol";
-import {IntelligentRouter} from "./lib/IntelligentRouter.sol";
-import {FHEPermissions} from "./lib/FHEPermissions.sol";
-import {ExecutionAnalytics} from "./lib/ExecutionAnalytics.sol";
+import {VaultSwapLib} from "../libraries/VaultSwapLib.sol";
+import {OrderQueue} from "../libraries/OrderQueue.sol";
+import {MEVProtection} from "../libraries/MEVProtection.sol";
+import {ExecutionStrategies} from "../libraries/ExecutionStrategies.sol";
+import {IntelligentRouter} from "../libraries/IntelligentRouter.sol";
+import {FHEPermissions} from "../libraries/FHEPermissions.sol";
+import {ExecutionAnalytics} from "../libraries/ExecutionAnalytics.sol";
 
 /// @title VaultSwap Hook
 /// @notice Professional market execution with complete MEV protection
@@ -648,7 +648,7 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
      * @param user User address
      * @return encBalance Encrypted balance
      */
-    function getEncryptedBalance(address token, address user) external view returns (euint128 encBalance) {
+    function getEncryptedBalance(address token, address user) external returns (euint128 encBalance) {
         try HybridFHERC20(token).encBalances(user) returns (euint128 balance) {
             return balance;
         } catch {
@@ -1247,57 +1247,57 @@ contract VaultSwapHook is BaseHook, IUnlockCallback, ReentrancyGuardTransient {
     //                    HELPER FUNCTIONS
     // =============================================================
 
-    function _calculateOptimalDecoySize(euint128 amountIn, euint32 protectionLevel) internal pure returns (euint128) {
+    function _calculateOptimalDecoySize(euint128 amountIn, euint32 protectionLevel) internal returns (euint128) {
         return VaultSwapLib.calculateOptimalDecoySize(amountIn, protectionLevel);
     }
 
-    function _calculateExecutionWindow(euint32 protectionLevel) internal pure returns (euint64) {
+    function _calculateExecutionWindow(euint32 protectionLevel) internal returns (euint64) {
         return VaultSwapLib.calculateExecutionWindow(protectionLevel);
     }
 
-    function _calculateMinLiquidity(euint128 amountIn) internal pure returns (euint128) {
+    function _calculateMinLiquidity(euint128 amountIn) internal returns (euint128) {
         return VaultSwapLib.calculateMinLiquidity(amountIn);
     }
 
-    function _getCurrentPoolPrice(PoolKey calldata key) internal view returns (euint128) {
+    function _getCurrentPoolPrice(PoolKey calldata key) internal returns (euint128) {
         // Simplified price calculation - in production would use proper price oracle
         return FHE.asEuint128(1e18); // Placeholder
     }
 
-    function _generateDecoyAmount(euint128 baseAmount, uint256 seed) internal pure returns (euint128) {
+    function _generateDecoyAmount(euint128 baseAmount, uint256 seed) internal returns (euint128) {
         // Generate pseudo-random decoy amount
         uint256 variation = (seed * DECOY_SEED) % 1000; // 0-10% variation
         euint128 decoyMultiplier = FHE.asEuint128(1000 + variation);
         return FHE.div(FHE.mul(baseAmount, decoyMultiplier), FHE.asEuint128(1000));
     }
 
-    function _generateDecoyDirection(euint8 realDirection, uint256 seed) internal pure returns (euint8) {
+    function _generateDecoyDirection(euint8 realDirection, uint256 seed) internal returns (euint8) {
         // Randomly flip direction for decoy
         return seed % 2 == 0 ? realDirection : FHE.asEuint8(1 - euint8.unwrap(realDirection));
     }
 
-    function _generateDecoyTiming(uint256 seed) internal view returns (euint64) {
+    function _generateDecoyTiming(uint256 seed) internal returns (euint64) {
         // Generate random timing within reasonable bounds
         uint256 delay = (seed * DECOY_SEED) % 300; // 0-5 minute variation
         return FHE.asEuint64(block.timestamp + delay);
     }
 
-    function _detectFrontRunning(bytes32 orderId, SwapParams calldata params) internal pure returns (ebool) {
+    function _detectFrontRunning(bytes32 orderId, SwapParams calldata params) internal returns (ebool) {
         // Simplified front-running detection - in production would analyze mempool
         return FHE.asEbool(false);
     }
 
-    function _detectSandwichAttack(bytes32 orderId, PoolKey calldata key) internal pure returns (ebool) {
+    function _detectSandwichAttack(bytes32 orderId, PoolKey calldata key) internal returns (ebool) {
         // Simplified sandwich detection - in production would analyze transaction patterns
         return FHE.asEbool(false);
     }
 
-    function _detectGasManipulation(bytes32 orderId) internal pure returns (ebool) {
+    function _detectGasManipulation(bytes32 orderId) internal returns (ebool) {
         // Simplified gas manipulation detection - in production would analyze gas prices
         return FHE.asEbool(false);
     }
 
-    function _detectMempoolManipulation(bytes32 orderId) internal pure returns (ebool) {
+    function _detectMempoolManipulation(bytes32 orderId) internal returns (ebool) {
         // Simplified mempool manipulation detection
         return FHE.asEbool(false);
     }

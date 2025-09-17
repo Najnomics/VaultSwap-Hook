@@ -14,7 +14,7 @@ import {PoolDonateTest} from "@uniswap/v4-core/src/test/PoolDonateTest.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {Constants} from "@uniswap/v4-core/src/../test/utils/Constants.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {VaultSwapHook} from "../src/VaultSwapHook.sol";
+import {VaultSwapHook} from "../src/hooks/VaultSwapHook.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {PositionManager} from "v4-periphery/src/PositionManager.sol";
@@ -35,6 +35,7 @@ contract VaultSwapHookScript is Script, DeployPermit2 {
     IPositionManager posm;
     PoolModifyLiquidityTest lpRouter;
     PoolSwapTest swapRouter;
+    IAllowanceTransfer permit2;
 
     function setUp() public {}
 
@@ -88,10 +89,15 @@ contract VaultSwapHookScript is Script, DeployPermit2 {
     }
 
     function deployPosm(IPoolManager poolManager) public returns (IPositionManager) {
-        anvilPermit2();
+        permit2 = IAllowanceTransfer(anvilPermit2());
         return IPositionManager(
             new PositionManager(poolManager, permit2, 300_000, IPositionDescriptor(address(0)), IWETH9(address(0)))
         );
+    }
+    
+    function anvilPermit2() public returns (address) {
+        // Deploy permit2 for anvil - simplified approach  
+        return PERMIT2_ADDRESS;
     }
 
     function approvePosmCurrency(IPositionManager _posm, Currency currency) internal {

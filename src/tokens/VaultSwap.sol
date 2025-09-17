@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {VaultSwapHook} from "./VaultSwapHook.sol";
+import {VaultSwapHook} from "../hooks/VaultSwapHook.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 /**

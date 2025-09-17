@@ -2,12 +2,12 @@
 pragma solidity ^0.8.25;
 
 import {Script, console} from "forge-std/Script.sol";
-import {VaultSwap} from "../src/VaultSwap.sol";
-import {AdvancedMEVDetection} from "../src/AdvancedMEVDetection.sol";
-import {IntelligentRouter} from "../src/IntelligentRouter.sol";
-import {ExecutionStrategies} from "../src/ExecutionStrategies.sol";
-import {VaultSwapAnalytics} from "../src/VaultSwapAnalytics.sol";
-import {InstitutionalFeatures} from "../src/InstitutionalFeatures.sol";
+import {VaultSwap} from "../src/tokens/VaultSwap.sol";
+import {AdvancedMEVDetection} from "../src/strategies/AdvancedMEVDetection.sol";
+import {IntelligentRouter} from "../src/routers/IntelligentRouter.sol";
+import {ExecutionStrategies} from "../src/strategies/ExecutionStrategies.sol";
+import {VaultSwapAnalytics} from "../src/analytics/VaultSwapAnalytics.sol";
+import {InstitutionalFeatures} from "../src/strategies/InstitutionalFeatures.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 /**
@@ -16,8 +16,6 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
  * @dev Handles deployment, configuration, and initialization of the entire VaultSwap system
  * 
  * @author VaultSwap Team
- * @version 1.0.0
- * @since 2024-01-01
  * 
  * @custom:deployment This script deploys all VaultSwap contracts in the correct order
  * @custom:configuration Includes post-deployment configuration and setup
@@ -250,7 +248,7 @@ contract DeployVaultSwap is Script {
             return NetworkConfig({
                 poolManager: 0x0000000000000000000000000000000000000000, // Placeholder
                 weth: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,
-                usdc: 0xA0b86a33E6441b8c4C8C0d4b0c8d8c8d8c8d8c8d,
+                usdc: 0xa0b86A33e6441B8c4c8C0D4b0c8D8C8D8c8D8c8D,
                 gasPrice: 20 gwei,
                 isTestnet: false
             });

@@ -9,5 +9,5 @@ abstract contract Fixtures is Test, Deployers {
     // Re-export constants for convenience with unique names
     uint160 constant FIXTURES_SQRT_PRICE_1_1 = Constants.SQRT_PRICE_1_1;
     bytes constant FIXTURES_ZERO_BYTES = Constants.ZERO_BYTES;
-    uint256 constant FIXTURES_MAX_SLIPPAGE_REMOVE_LIQUIDITY = Constants.MAX_SLIPPAGE_REMOVE_LIQUIDITY;
+    uint256 constant FIXTURES_MAX_SLIPPAGE_REMOVE_LIQUIDITY = 100; // 1% max slippage
 }
