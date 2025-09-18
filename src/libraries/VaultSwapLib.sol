@@ -41,14 +41,25 @@ library VaultSwapLib {
         euint128 amountIn,
         euint32 protectionLevel
     ) internal returns (euint128 decoyAmount) {
+        // Handle zero amount case
+        if (euint128.unwrap(amountIn) == 0) {
+            return FHE.asEuint128(0);
+        }
+        
+        // Handle invalid protection levels
+        uint32 level = uint32(euint32.unwrap(protectionLevel));
+        if (level == 0 || level > 5) {
+            return FHE.asEuint128(0);
+        }
+        
         // Simplified decoy size calculation - avoid division for now
-        // Use a fixed percentage based on protection level
-        euint32 level = FHE.sub(protectionLevel, FHE.asEuint32(1));
-        euint128 multiplier = FHE.add(FHE.asEuint128(5), FHE.asEuint128(euint32.unwrap(level))); // 5-9%
+        // Use a fixed percentage based on protection level (5-9%)
+        uint128 multiplier = 5 + (level - 1); // 5, 6, 7, 8, 9%
         
         // Calculate decoy amount as percentage of input
-        decoyAmount = FHE.mul(amountIn, multiplier);
-        decoyAmount = FHE.div(decoyAmount, FHE.asEuint128(100)); // Divide by 100 to get percentage
+        uint128 amount = uint128(euint128.unwrap(amountIn));
+        uint128 decoy = (amount * multiplier) / 100;
+        decoyAmount = FHE.asEuint128(decoy);
     }
 
     /**
@@ -59,14 +70,18 @@ library VaultSwapLib {
     function calculateExecutionWindow(
         euint32 protectionLevel
     ) internal returns (euint64 executionWindow) {
+        // Handle invalid protection levels
+        uint32 level = uint32(euint32.unwrap(protectionLevel));
+        if (level == 0 || level > 5) {
+            return FHE.asEuint64(30); // Default window
+        }
+        
         // Base execution window (30 seconds)
         euint64 baseWindow = FHE.asEuint64(30);
         
-        // Scale by protection level
-        euint32 scaledLevel = FHE.sub(protectionLevel, FHE.asEuint32(1));
-        euint64 multiplier = FHE.add(FHE.asEuint64(1), FHE.asEuint64(euint32.unwrap(scaledLevel)));
-        
-        executionWindow = FHE.mul(baseWindow, multiplier);
+        // Scale by protection level (1-5)
+        uint64 multiplier = uint64(level);
+        executionWindow = FHE.mul(baseWindow, FHE.asEuint64(multiplier));
     }
 
     /**
@@ -77,6 +92,11 @@ library VaultSwapLib {
     function calculateMinLiquidity(
         euint128 amountIn
     ) internal returns (euint128 minLiquidity) {
+        // Handle zero amount case
+        if (euint128.unwrap(amountIn) == 0) {
+            return FHE.asEuint128(0);
+        }
+        
         // Require at least 10x the order size in liquidity
         minLiquidity = FHE.mul(amountIn, FHE.asEuint128(10));
     }
@@ -93,7 +113,14 @@ library VaultSwapLib {
     ) internal pure returns (uint256 quality) {
         if (expectedAmount == 0) return 0;
         
-        uint256 slippage = (expectedAmount - actualAmount) * 10000 / expectedAmount;
+        // If actual amount is greater than expected, return perfect score
+        if (actualAmount >= expectedAmount) return 100;
+        
+        // Use safe math to prevent overflow
+        uint256 slippage;
+        unchecked {
+            slippage = (expectedAmount - actualAmount) * 10000 / expectedAmount;
+        }
         
         if (slippage <= 100) return 100; // 1% or less slippage = perfect
         if (slippage <= 500) return 90;  // 5% slippage = excellent
