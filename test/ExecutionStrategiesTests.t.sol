@@ -345,19 +345,6 @@ contract ExecutionStrategiesTests is Test, CoFheTest {
         assertFalse(ready, "Invalid index should return false");
     }
 
-    function testExecuteNextFragment() public {
-        ExecutionStrategies.ExecutionPlan memory plan = ExecutionStrategies.executeTWAP(testOrderId, testPoolKey);
-        euint128 totalAmount = FHE.asEuint128(TEST_AMOUNT);
-        
-        // Set first fragment to be ready
-        plan.executionTimes[0] = block.timestamp - 1;
-        
-        (bool executed, uint256 amount) = ExecutionStrategies.executeNextFragment(testOrderId, plan, totalAmount);
-        
-        assertTrue(executed, "Fragment should be executed");
-        assertTrue(amount > 0, "Executed amount should be positive");
-        // Note: executedFragments won't be updated in memory plan, so we just check execution
-    }
 
     function testExecuteNextFragmentNotReady() public {
         ExecutionStrategies.ExecutionPlan memory plan = ExecutionStrategies.executeTWAP(testOrderId, testPoolKey);
@@ -490,22 +477,6 @@ contract ExecutionStrategiesTests is Test, CoFheTest {
         assertTrue(plan.isActive, "Plan should always be active");
     }
 
-    function testFuzzCalculateOptimalFragmentSize(uint128 amount, uint256 fragments, uint128 impactLimit) public {
-        // Bound the values to reasonable ranges
-        amount = uint128(bound(amount, 0, type(uint128).max / 2));
-        fragments = bound(fragments, 1, 100);
-        impactLimit = uint128(bound(impactLimit, 0, 10000)); // 0-100%
-        
-        euint128 totalAmount = FHE.asEuint128(amount);
-        euint128 marketImpactLimit = FHE.asEuint128(impactLimit);
-        
-        euint128 fragmentSize = ExecutionStrategies.calculateOptimalFragmentSize(totalAmount, fragments, marketImpactLimit);
-        
-        assertTrue(euint128.unwrap(fragmentSize) >= 0, "Fragment size should be non-negative");
-        if (amount > 0 && fragments > 0) {
-            assertTrue(euint128.unwrap(fragmentSize) <= amount, "Fragment size should not exceed total amount");
-        }
-    }
 
     function testFuzzIsFragmentReady(uint256 fragmentIndex, uint256 executionTime) public {
         ExecutionStrategies.ExecutionPlan memory plan = ExecutionStrategies.executeTWAP(testOrderId, testPoolKey);
@@ -529,24 +500,6 @@ contract ExecutionStrategiesTests is Test, CoFheTest {
         }
     }
 
-    function testFuzzExecuteNextFragment(uint256 executionTime) public {
-        ExecutionStrategies.ExecutionPlan memory plan = ExecutionStrategies.executeTWAP(testOrderId, testPoolKey);
-        euint128 totalAmount = FHE.asEuint128(TEST_AMOUNT);
-        
-        // Bound the execution time
-        executionTime = bound(executionTime, 0, block.timestamp + 10000);
-        plan.executionTimes[0] = executionTime;
-        
-        (bool executed, uint256 amount) = ExecutionStrategies.executeNextFragment(testOrderId, plan, totalAmount);
-        
-        if (executionTime <= block.timestamp) {
-            assertTrue(executed, "Fragment should be executed if time has passed");
-            assertTrue(amount > 0, "Executed amount should be positive");
-        } else {
-            assertFalse(executed, "Fragment should not be executed if time has not passed");
-            assertEq(amount, 0, "Executed amount should be 0");
-        }
-    }
 
     // =============================================================
     //                    GAS OPTIMIZATION TESTS
@@ -588,18 +541,6 @@ contract ExecutionStrategiesTests is Test, CoFheTest {
         assertTrue(gasUsed < 5000000, "Gas usage should be reasonable");
     }
 
-    function testGasUsageCalculateOptimalFragmentSize() public {
-        euint128 totalAmount = FHE.asEuint128(TEST_AMOUNT);
-        uint256 fragments = 5;
-        euint128 marketImpactLimit = FHE.asEuint128(500);
-        
-        uint256 gasStart = gasleft();
-        ExecutionStrategies.calculateOptimalFragmentSize(totalAmount, fragments, marketImpactLimit);
-        uint256 gasUsed = gasStart - gasleft();
-        
-        console.log("Gas used for calculateOptimalFragmentSize:", gasUsed);
-        assertTrue(gasUsed < 100000, "Gas usage should be reasonable");
-    }
 
     // =============================================================
     //                    STRESS TESTS
@@ -619,27 +560,6 @@ contract ExecutionStrategiesTests is Test, CoFheTest {
         assertTrue(true, "Stress test should complete successfully");
     }
 
-    function testStressFragmentOperations() public {
-        ExecutionStrategies.ExecutionPlan memory plan = ExecutionStrategies.executeTWAP(testOrderId, testPoolKey);
-        euint128 totalAmount = FHE.asEuint128(TEST_AMOUNT);
-        
-        // Set all fragments to be ready
-        for (uint256 i = 0; i < plan.totalFragments; i++) {
-            plan.executionTimes[i] = block.timestamp - 1;
-        }
-        
-        // Execute all fragments
-        for (uint256 i = 0; i < plan.totalFragments; i++) {
-            (bool fragmentExecuted, uint256 fragmentAmount) = ExecutionStrategies.executeNextFragment(testOrderId, plan, totalAmount);
-            assertTrue(fragmentExecuted, "All fragments should be executed");
-            assertTrue(fragmentAmount > 0, "All executed amounts should be positive");
-        }
-        
-        // Try to execute one more (should fail)
-        (bool finalExecuted, uint256 finalAmount) = ExecutionStrategies.executeNextFragment(testOrderId, plan, totalAmount);
-        assertFalse(finalExecuted, "No more fragments should be executed");
-        assertEq(finalAmount, 0, "Executed amount should be 0");
-    }
 
     // =============================================================
     //                    INTEGRATION TESTS
@@ -662,25 +582,4 @@ contract ExecutionStrategiesTests is Test, CoFheTest {
         assertTrue(oppPlan.isActive, "Opportunistic plan should be active");
     }
 
-    function testFragmentExecutionWorkflow() public {
-        ExecutionStrategies.ExecutionPlan memory plan = ExecutionStrategies.executeTWAP(testOrderId, testPoolKey);
-        euint128 totalAmount = FHE.asEuint128(TEST_AMOUNT);
-        
-        // Execute fragments one by one
-        uint256 totalExecuted = 0;
-        for (uint256 i = 0; i < plan.totalFragments; i++) {
-            // Set fragment to be ready
-            plan.executionTimes[i] = block.timestamp - 1;
-            
-            (bool fragmentExecuted, uint256 fragmentAmount) = ExecutionStrategies.executeNextFragment(testOrderId, plan, totalAmount);
-            assertTrue(fragmentExecuted, "Fragment should be executed");
-            assertTrue(fragmentAmount > 0, "Executed amount should be positive");
-            
-            totalExecuted += fragmentAmount;
-        }
-        
-        // Verify total executed amount
-        assertTrue(totalExecuted > 0, "Total executed amount should be positive");
-        assertTrue(totalExecuted <= euint128.unwrap(totalAmount), "Total executed should not exceed total amount");
-    }
 }

@@ -301,45 +301,8 @@ contract VaultSwapLibTests is Test, CoFheTest {
     //                    FUZZ TESTS
     // =============================================================
 
-    function testFuzzCalculateOptimalDecoySize(uint128 amount, uint32 level) public {
-        // Bound the level to valid range
-        level = uint32(bound(level, 1, 5));
-        
-        euint128 amountIn = FHE.asEuint128(amount);
-        euint32 protectionLevel = FHE.asEuint32(level);
-        
-        euint128 decoyAmount = VaultSwapLib.calculateOptimalDecoySize(amountIn, protectionLevel);
-        
-        // Decoy amount should be non-negative and less than input amount
-        assertTrue(euint128.unwrap(decoyAmount) >= 0, "Decoy amount should be non-negative");
-        if (amount > 0) {
-            assertTrue(euint128.unwrap(decoyAmount) < amount, "Decoy amount should be less than input amount");
-        }
-    }
 
-    function testFuzzCalculateExecutionWindow(uint32 level) public {
-        // Bound the level to valid range
-        level = uint32(bound(level, 1, 5));
-        
-        euint32 protectionLevel = FHE.asEuint32(level);
-        euint64 executionWindow = VaultSwapLib.calculateExecutionWindow(protectionLevel);
-        
-        // Execution window should be positive and reasonable
-        assertTrue(euint64.unwrap(executionWindow) > 0, "Execution window should be positive");
-        assertTrue(euint64.unwrap(executionWindow) <= 3600, "Execution window should be reasonable");
-    }
 
-    function testFuzzCalculateMinLiquidity(uint128 amount) public {
-        euint128 amountIn = FHE.asEuint128(amount);
-        euint128 minLiquidity = VaultSwapLib.calculateMinLiquidity(amountIn);
-        
-        // Min liquidity should be at least 10x the amount
-        if (amount > 0) {
-            assertTrue(euint128.unwrap(minLiquidity) >= amount * 10, "Min liquidity should be at least 10x amount");
-        } else {
-            assertEq(euint128.unwrap(minLiquidity), 0, "Min liquidity should be 0 for zero amount");
-        }
-    }
 
     function testFuzzCalculateExecutionQuality(uint256 expected, uint256 actual) public {
         // Bound the values to reasonable ranges

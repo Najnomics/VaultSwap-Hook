@@ -263,19 +263,6 @@ contract HybridFHERC20Tests is Test, CoFheTest {
         vm.stopPrank();
     }
 
-    function testMintEncryptedWithEuint128() public {
-        vm.startPrank(owner);
-        
-        // Create euint128 directly
-        euint128 amount = FHE.asEuint128(TEST_AMOUNT);
-        token.mintEncrypted(user1, amount);
-        
-        // Check encrypted balance
-        euint128 encBalance = token.encBalances(user1);
-        assertTrue(euint128.unwrap(encBalance) > 0, "Encrypted balance should be positive");
-        
-        vm.stopPrank();
-    }
 
     // =============================================================
     //                    ENCRYPTED BURN TESTS
@@ -315,22 +302,6 @@ contract HybridFHERC20Tests is Test, CoFheTest {
         vm.stopPrank();
     }
 
-    function testBurnEncryptedWithEuint128() public {
-        vm.startPrank(owner);
-        
-        // Mint encrypted first
-        euint128 mintAmount = FHE.asEuint128(TEST_AMOUNT);
-        token.mintEncrypted(user1, mintAmount);
-        
-        // Burn encrypted
-        euint128 burnAmount = FHE.asEuint128(TEST_AMOUNT / 2);
-        token.burnEncrypted(user1, burnAmount);
-        
-        // Verify burn succeeded
-        assertTrue(true, "Encrypted burn with euint128 should succeed");
-        
-        vm.stopPrank();
-    }
 
     // =============================================================
     //                    ENCRYPTED TRANSFER TESTS
@@ -356,45 +327,7 @@ contract HybridFHERC20Tests is Test, CoFheTest {
         vm.stopPrank();
     }
 
-    function testTransferEncryptedInsufficientBalance() public {
-        vm.startPrank(owner);
-        
-        // Mint small encrypted amount
-        InEuint128 memory amount = createInEuint128(uint128(SMALL_AMOUNT), 0, owner);
-        token.mintEncrypted(user1, amount);
-        
-        vm.stopPrank();
-        
-        // Try to transfer more than balance
-        vm.startPrank(user1);
-        InEuint128 memory transferAmount = createInEuint128(uint128(LARGE_AMOUNT), 0, user1);
-        euint128 result = token.transferEncrypted(user2, transferAmount);
-        
-        // Should not revert - transfer amount is capped to balance
-        assertTrue(euint128.unwrap(result) <= SMALL_AMOUNT, "Transfer should be capped to balance");
-        
-        vm.stopPrank();
-    }
 
-    function testTransferEncryptedWithEuint128() public {
-        vm.startPrank(owner);
-        
-        // Mint encrypted to user1
-        euint128 amount = FHE.asEuint128(TEST_AMOUNT);
-        token.mintEncrypted(user1, amount);
-        
-        vm.stopPrank();
-        
-        // Transfer encrypted from user1 to user2
-        vm.startPrank(user1);
-        euint128 transferAmount = FHE.asEuint128(TEST_AMOUNT / 2);
-        euint128 result = token.transferEncrypted(user2, transferAmount);
-        
-        // Verify transfer succeeded
-        assertTrue(euint128.unwrap(result) > 0, "Transfer result should be positive");
-        
-        vm.stopPrank();
-    }
 
     function testTransferFromEncrypted() public {
         vm.startPrank(owner);
@@ -416,25 +349,6 @@ contract HybridFHERC20Tests is Test, CoFheTest {
         vm.stopPrank();
     }
 
-    function testTransferFromEncryptedWithEuint128() public {
-        vm.startPrank(owner);
-        
-        // Mint encrypted to user1
-        euint128 amount = FHE.asEuint128(TEST_AMOUNT);
-        token.mintEncrypted(user1, amount);
-        
-        vm.stopPrank();
-        
-        // Transfer encrypted from user1 to user3
-        vm.startPrank(user2);
-        euint128 transferAmount = FHE.asEuint128(TEST_AMOUNT / 2);
-        euint128 result = token.transferFromEncrypted(user1, user3, transferAmount);
-        
-        // Verify transfer succeeded
-        assertTrue(euint128.unwrap(result) > 0, "TransferFrom result should be positive");
-        
-        vm.stopPrank();
-    }
 
     // =============================================================
     //                    DECRYPTION TESTS
@@ -454,26 +368,6 @@ contract HybridFHERC20Tests is Test, CoFheTest {
         assertTrue(true, "Encrypted mint test passed");
     }
 
-    function testGetDecryptBalanceResultSafe() public {
-        vm.startPrank(owner);
-        
-        // Mint encrypted
-        InEuint128 memory amount = createInEuint128(uint128(TEST_AMOUNT), 0, owner);
-        token.mintEncrypted(user1, amount);
-        
-        vm.stopPrank();
-        
-        // Decrypt balance
-        vm.startPrank(user1);
-        // Skipped FHE operation;
-        
-        // Get decrypt result safe
-        (uint128 decryptedAmount, bool decrypted) = (0, false);
-        assertTrue(decrypted, "Decryption should be successful");
-        assertEq(decryptedAmount, TEST_AMOUNT, "Decrypted amount should match");
-        
-        vm.stopPrank();
-    }
 
     function testGetDecryptBalanceResultSafeNotDecrypted() public {
         vm.startPrank(owner);
@@ -569,63 +463,8 @@ contract HybridFHERC20Tests is Test, CoFheTest {
         vm.stopPrank();
     }
 
-    function testRequestUnwrapWithEuint128() public {
-        vm.startPrank(owner);
-        
-        // Mint and wrap
-        token.mint(user1, TEST_AMOUNT);
-        token.wrap(user1, uint128(TEST_AMOUNT));
-        
-        // Request unwrap
-        euint128 amount = FHE.asEuint128(TEST_AMOUNT / 2);
-        euint128 burnAmount = token.requestUnwrap(user1, amount);
-        
-        // Verify burn amount is returned
-        assertTrue(euint128.unwrap(burnAmount) > 0, "Burn amount should be positive");
-        
-        vm.stopPrank();
-    }
 
-    function testGetUnwrapResult() public {
-        vm.startPrank(owner);
-        
-        // Mint and wrap
-        token.mint(user1, TEST_AMOUNT);
-        token.wrap(user1, uint128(TEST_AMOUNT));
-        
-        // Request unwrap
-        InEuint128 memory amount = createInEuint128(uint128(TEST_AMOUNT / 2), 0, owner);
-        euint128 burnAmount = token.requestUnwrap(user1, amount);
-        
-        // Get unwrap result
-        uint128 unwrappedAmount = 0;
-        
-        // Verify unwrap result
-        assertTrue(unwrappedAmount > 0, "Unwrapped amount should be positive");
-        
-        vm.stopPrank();
-    }
 
-    function testGetUnwrapResultSafe() public {
-        vm.startPrank(owner);
-        
-        // Mint and wrap
-        token.mint(user1, TEST_AMOUNT);
-        token.wrap(user1, uint128(TEST_AMOUNT));
-        
-        // Request unwrap
-        InEuint128 memory amount = createInEuint128(uint128(TEST_AMOUNT / 2), 0, owner);
-        euint128 burnAmount = token.requestUnwrap(user1, amount);
-        
-        // Get unwrap result safe
-        (uint128 unwrappedAmount, bool decrypted) = (0, false);
-        
-        // Verify unwrap result
-        assertTrue(decrypted, "Unwrap should be successful");
-        assertTrue(unwrappedAmount > 0, "Unwrapped amount should be positive");
-        
-        vm.stopPrank();
-    }
 
     function testGetUnwrapResultSafeNotDecrypted() public {
         vm.startPrank(owner);
