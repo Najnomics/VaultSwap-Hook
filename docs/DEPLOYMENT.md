@@ -1,576 +1,286 @@
-# VaultSwap Hook - Deployment Guide
+# VaultSwap Hook Deployment Guide
 
-## Table of Contents
-- [Prerequisites](#prerequisites)
-- [Environment Setup](#environment-setup)
-- [Local Development](#local-development)
-- [Testnet Deployment](#testnet-deployment)
-- [Mainnet Deployment](#mainnet-deployment)
-- [Configuration](#configuration)
-- [Verification](#verification)
-- [Monitoring](#monitoring)
-- [Troubleshooting](#troubleshooting)
+## Overview
+
+This guide covers the deployment of VaultSwap Hook across different networks and environments.
 
 ## Prerequisites
 
 ### Required Software
-- **Foundry**: For smart contract development and deployment
-- **Node.js**: For JavaScript/TypeScript tooling
-- **Git**: For version control
-- **Docker**: For local development environment (optional)
+- **Foundry**: Latest version
+- **Node.js**: 18+ with pnpm
+- **Go**: 1.21+ (for AVS components)
+- **Docker**: For local development
 
 ### Required Accounts
-- **Deployer Wallet**: Wallet with sufficient funds for deployment
-- **API Keys**: Block explorer API keys for verification
-- **RPC Access**: Access to network RPC endpoints
-
-### Required Knowledge
-- **Solidity**: Smart contract development
-- **Foundry**: Forge and Cast tools
-- **Uniswap v4**: Hook development
-- **FHE**: Fully Homomorphic Encryption concepts
+- Ethereum account with sufficient ETH
+- API keys for block explorers
+- RPC endpoints for target networks
 
 ## Environment Setup
 
 ### 1. Clone Repository
-
 ```bash
-git clone https://github.com/your-org/vaultswap-hook.git
-cd vaultswap-hook
+git clone https://github.com/VaultSwap/VaultSwap-Hook.git
+cd VaultSwap-Hook
 ```
 
 ### 2. Install Dependencies
-
 ```bash
-# Install Foundry dependencies
-make install
+# Install Node.js dependencies
+pnpm install
 
-# Install Node.js dependencies (if any)
-npm install
+# Install Foundry dependencies
+forge install
+
+# Install AVS dependencies
+cd avs
+go mod tidy
+cd ..
 ```
 
-### 3. Environment Configuration
-
+### 3. Configure Environment
 ```bash
 # Copy environment template
 cp .env.example .env
 
-# Edit environment file
+# Edit environment variables
 nano .env
 ```
 
-### 4. Configure Environment Variables
+## Deployment Options
 
+### Local Development (Anvil)
+
+**Start Anvil:**
 ```bash
-# Required variables
-PRIVATE_KEY=your_private_key_here
-ARBITRUM_SEPOLIA_RPC=https://sepolia-rollup.arbitrum.io/rpc
-ARBISCAN_API_KEY=your_arbiscan_api_key_here
-
-# Optional variables
-POOL_MANAGER_ADDRESS=0x0000000000000000000000000000000000000000
+anvil
 ```
 
-## Local Development
-
-### 1. Start Local Anvil
-
+**Deploy Contracts:**
 ```bash
-# Start Anvil in background
-make dev
+# Using deployment script
+./scripts/deploy-anvil.sh
 
-# Or start manually
-anvil --host 0.0.0.0 --port 8545
+# Or manually
+forge script script/DeployVaultSwapHookSimple.s.sol \
+  --rpc-url http://localhost:8545 \
+  --broadcast
 ```
 
-### 2. Deploy to Local Network
+### Testnet Deployment (Sepolia)
 
+**Prerequisites:**
+- Sepolia ETH for gas fees
+- Etherscan API key for verification
+
+**Deploy:**
 ```bash
-# Deploy all contracts
-make deploy-local
+# Using deployment script
+./scripts/deploy-testnet.sh
 
-# Or deploy manually
-forge script script/DeployVaultSwap.s.sol --rpc-url http://localhost:8545 --broadcast --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-```
-
-### 3. Configure Local Deployment
-
-```bash
-# Configure contracts
-make configure-local
-
-# Or configure manually
-forge script script/ConfigureVaultSwap.s.sol --rpc-url http://localhost:8545 --broadcast --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-```
-
-### 4. Run Tests
-
-```bash
-# Run all tests
-make test
-
-# Run specific test
-forge test --match-contract VaultSwapTest -vv
-
-# Run with coverage
-make test-coverage
-```
-
-## Testnet Deployment
-
-### Arbitrum Sepolia
-
-#### 1. Deploy Contracts
-
-```bash
-# Deploy to Arbitrum Sepolia
-make deploy-sepolia
-
-# Or deploy manually
-forge script script/DeployVaultSwap.s.sol \
-  --rpc-url $ARBITRUM_SEPOLIA_RPC \
+# Or manually
+forge script script/DeployVaultSwapHook.s.sol \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $SEPOLIA_PRIVATE_KEY \
   --broadcast \
   --verify \
-  --etherscan-api-key $ARBISCAN_API_KEY \
-  --private-key $PRIVATE_KEY
+  --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
-#### 2. Configure Deployment
+### Mainnet Deployment
 
+**Prerequisites:**
+- Mainnet ETH for gas fees
+- Etherscan API key for verification
+- Thorough testing on testnets
+
+**Deploy:**
 ```bash
-# Configure contracts
-make configure-sepolia
+# Using deployment script
+./scripts/deploy-mainnet.sh
 
-# Or configure manually
-forge script script/ConfigureVaultSwap.s.sol \
-  --rpc-url $ARBITRUM_SEPOLIA_RPC \
-  --broadcast \
-  --private-key $PRIVATE_KEY
-```
-
-#### 3. Verify Contracts
-
-```bash
-# Verify contracts
-make verify-sepolia
-
-# Or verify manually
-forge verify-contract \
-  --chain-id 421614 \
-  --num-of-optimizations 200 \
-  --watch \
-  --constructor-args $(cast abi-encode "constructor(address)" $POOL_MANAGER_ADDRESS) \
-  $VAULTSWAP_ADDRESS \
-  src/VaultSwap.sol:VaultSwap
-```
-
-### Base Sepolia
-
-#### 1. Deploy Contracts
-
-```bash
-# Deploy to Base Sepolia
-make deploy-base-sepolia
-
-# Or deploy manually
-forge script script/DeployVaultSwap.s.sol \
-  --rpc-url $BASE_SEPOLIA_RPC \
+# Or manually
+forge script script/DeployVaultSwapHook.s.sol \
+  --rpc-url $MAINNET_RPC_URL \
+  --private-key $MAINNET_PRIVATE_KEY \
   --broadcast \
   --verify \
-  --etherscan-api-key $BASESCAN_API_KEY \
-  --private-key $PRIVATE_KEY
+  --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
-#### 2. Configure Deployment
+## AVS Deployment
 
+### L1 Contracts (Ethereum)
+
+**Deploy Service Manager:**
 ```bash
-# Configure contracts
-make configure-base-sepolia
+cd avs
+make deploy-l1 L1_RPC_URL=$MAINNET_RPC_URL
 ```
 
-#### 3. Verify Contracts
+### L2 Contracts (Arbitrum)
 
+**Deploy Task Hook:**
 ```bash
-# Verify contracts
-make verify-base-sepolia
+cd avs
+make deploy-l2 L2_RPC_URL=$ARBITRUM_RPC_URL
 ```
 
-## Mainnet Deployment
+## Post-Deployment
 
-### Arbitrum One
-
-#### 1. Pre-deployment Checklist
-
-- [ ] All tests passing
-- [ ] Security audit completed
-- [ ] Configuration reviewed
-- [ ] Deployment script tested
-- [ ] Emergency procedures in place
-
-#### 2. Deploy Contracts
-
+### 1. Verify Contracts
 ```bash
-# Deploy to Arbitrum One
-make deploy-arbitrum
+# Check deployment status
+forge verify-contract <CONTRACT_ADDRESS> <CONTRACT_NAME> \
+  --etherscan-api-key $ETHERSCAN_API_KEY
 
-# Or deploy manually
-forge script script/DeployVaultSwap.s.sol \
-  --rpc-url $ARBITRUM_RPC \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $ARBISCAN_API_KEY \
-  --private-key $PRIVATE_KEY
+# Verify on block explorer
+cast call <CONTRACT_ADDRESS> "name()" --rpc-url $RPC_URL
 ```
 
-#### 3. Configure Deployment
-
+### 2. Initialize Contracts
 ```bash
-# Configure contracts
-make configure-arbitrum
+# Set up initial configuration
+cast send <HOOK_ADDRESS> "initialize()" \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $RPC_URL
 ```
 
-#### 4. Verify Contracts
-
+### 3. Configure Parameters
 ```bash
-# Verify contracts
-make verify-arbitrum
+# Set MEV protection level
+cast send <HOOK_ADDRESS> "setMEVProtectionLevel(uint8)" 3 \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $RPC_URL
+
+# Enable decoy orders
+cast send <HOOK_ADDRESS> "enableDecoyOrders(bool)" true \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $RPC_URL
 ```
 
-### Base Mainnet
+## Network-Specific Configuration
 
-#### 1. Deploy Contracts
+### Ethereum Mainnet
+- **Chain ID**: 1
+- **Gas Price**: 20-50 gwei
+- **Confirmation Blocks**: 12
 
-```bash
-# Deploy to Base Mainnet
-make deploy-base
+### Arbitrum
+- **Chain ID**: 42161
+- **Gas Price**: 0.1 gwei
+- **Confirmation Blocks**: 1
 
-# Or deploy manually
-forge script script/DeployVaultSwap.s.sol \
-  --rpc-url $BASE_RPC \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $BASESCAN_API_KEY \
-  --private-key $PRIVATE_KEY
-```
+### Optimism
+- **Chain ID**: 10
+- **Gas Price**: 0.001 gwei
+- **Confirmation Blocks**: 1
 
-#### 2. Configure Deployment
+### Polygon
+- **Chain ID**: 137
+- **Gas Price**: 30-100 gwei
+- **Confirmation Blocks**: 30
 
-```bash
-# Configure contracts
-make configure-base
-```
+### Base
+- **Chain ID**: 8453
+- **Gas Price**: 0.001 gwei
+- **Confirmation Blocks**: 1
 
-#### 3. Verify Contracts
+## Security Considerations
 
-```bash
-# Verify contracts
-make verify-base
-```
+### Private Key Management
+- Use hardware wallets for mainnet
+- Never commit private keys to version control
+- Use environment variables for sensitive data
 
-## Configuration
+### Multi-Signature Setup
+- Deploy with multi-sig for mainnet
+- Set up timelock for critical functions
+- Implement emergency pause functionality
 
-### Network-specific Configuration
-
-Each network has specific configuration parameters:
-
-#### Arbitrum Sepolia
-```bash
-# Low limits for testnet
-MEV_PROTECTION_LEVELS=1,2,3
-DECOY_COUNTS=1,2,3
-EXECUTION_DELAYS=10,30,60
-```
-
-#### Arbitrum One
-```bash
-# Full feature set
-MEV_PROTECTION_LEVELS=1,2,3,4,5
-DECOY_COUNTS=2,3,5,8,12
-EXECUTION_DELAYS=30,60,120,300,600
-```
-
-### Component Configuration
-
-#### MEV Protection
-```bash
-# Configure protection levels
-MEV_PROTECTION_LEVEL_1_DECOY_COUNT=2
-MEV_PROTECTION_LEVEL_1_EXECUTION_DELAY=30
-MEV_PROTECTION_LEVEL_1_GAS_THRESHOLD=20
-```
-
-#### Routing
-```bash
-# Configure routing strategies
-ROUTING_STRATEGY_BEST_PRICE=0
-ROUTING_STRATEGY_LOWEST_IMPACT=1
-ROUTING_STRATEGY_FASTEST=2
-ROUTING_STRATEGY_BALANCED=3
-```
-
-#### Analytics
-```bash
-# Configure analytics
-ENABLE_DETAILED_METRICS=true
-ENABLE_RISK_ASSESSMENT=true
-ENABLE_BENCHMARKING=true
-DATA_RETENTION_PERIOD=31536000
-```
-
-### Institutional Configuration
-
-#### Compliance
-```bash
-# Configure compliance thresholds
-KYC_SCORE_THRESHOLD=80
-AML_SCORE_THRESHOLD=85
-REGULATORY_SCORE_THRESHOLD=90
-RISK_SCORE_THRESHOLD=75
-```
-
-#### Risk Management
-```bash
-# Configure risk limits
-RISK_LIMIT_LEVEL_1=1000000
-RISK_LIMIT_LEVEL_2=5000000
-RISK_LIMIT_LEVEL_3=10000000
-RISK_LIMIT_LEVEL_4=50000000
-RISK_LIMIT_LEVEL_5=100000000
-```
-
-## Verification
-
-### Contract Verification
-
-#### Automatic Verification
-```bash
-# Verify during deployment
-forge script script/DeployVaultSwap.s.sol --verify
-```
-
-#### Manual Verification
-```bash
-# Verify specific contract
-forge verify-contract \
-  --chain-id 421614 \
-  --num-of-optimizations 200 \
-  --watch \
-  --constructor-args $(cast abi-encode "constructor(address)" $POOL_MANAGER_ADDRESS) \
-  $VAULTSWAP_ADDRESS \
-  src/VaultSwap.sol:VaultSwap
-```
-
-### Verification Checklist
-
-- [ ] All contracts verified
-- [ ] Constructor arguments correct
-- [ ] Source code matches
-- [ ] Optimization settings correct
-- [ ] Network parameters correct
-
-## Monitoring
-
-### Health Checks
-
-#### Contract Health
-```bash
-# Check contract deployment
-cast call $VAULTSWAP_ADDRESS "getHookPermissions()" --rpc-url $RPC_URL
-
-# Check MEV detection
-cast call $MEV_DETECTION_ADDRESS "getMEVStatistics()" --rpc-url $RPC_URL
-
-# Check router
-cast call $ROUTER_ADDRESS "getRoutingStatistics()" --rpc-url $RPC_URL
-```
-
-#### System Health
-```bash
-# Check analytics
-cast call $ANALYTICS_ADDRESS "getGlobalStatistics()" --rpc-url $RPC_URL
-
-# Check institutional features
-cast call $INSTITUTIONAL_FEATURES_ADDRESS "getGlobalStatistics()" --rpc-url $RPC_URL
-```
-
-### Monitoring Setup
-
-#### 1. Set up Monitoring Endpoints
-
-```bash
-# Configure monitoring
-MONITORING_ENDPOINT=https://monitoring.vaultswap.com
-ALERT_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
-```
-
-#### 2. Configure Alerts
-
-```bash
-# Configure alert thresholds
-ALERT_MEV_DETECTION_THRESHOLD=5
-ALERT_RISK_VIOLATION_THRESHOLD=3
-ALERT_COMPLIANCE_VIOLATION_THRESHOLD=1
-```
-
-#### 3. Set up Logging
-
-```bash
-# Configure logging
-ENABLE_DEBUG_LOGGING=false
-ENABLE_TEST_MODE=false
-ENABLE_MOCK_DATA=false
-```
+### Verification
+- Verify all contracts on block explorers
+- Run comprehensive tests before deployment
+- Monitor for security vulnerabilities
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### 1. Deployment Failures
-
-**Issue**: Contract deployment fails
-**Solution**: Check gas limits and RPC connectivity
-
+**1. Insufficient Gas**
 ```bash
-# Check gas limits
-cast gas-price --rpc-url $RPC_URL
+# Increase gas limit
+forge script script/DeployVaultSwapHook.s.sol \
+  --gas-limit 10000000 \
+  --rpc-url $RPC_URL
+```
 
-# Check RPC connectivity
+**2. Verification Failed**
+```bash
+# Check contract source
+forge verify-contract <ADDRESS> <CONTRACT> \
+  --etherscan-api-key $API_KEY \
+  --show-standard-json-input
+```
+
+**3. RPC Connection Issues**
+```bash
+# Test RPC connection
 cast block-number --rpc-url $RPC_URL
-```
-
-#### 2. Verification Failures
-
-**Issue**: Contract verification fails
-**Solution**: Check constructor arguments and source code
-
-```bash
-# Check constructor arguments
-cast abi-encode "constructor(address)" $POOL_MANAGER_ADDRESS
-
-# Check source code
-forge build --sizes
-```
-
-#### 3. Configuration Issues
-
-**Issue**: Configuration script fails
-**Solution**: Check environment variables and network parameters
-
-```bash
-# Check environment variables
-env | grep -E "(RPC|API|ADDRESS)"
-
-# Check network parameters
-cast chain-id --rpc-url $RPC_URL
 ```
 
 ### Debug Commands
 
-#### 1. Check Contract State
-
 ```bash
-# Check contract state
-cast call $VAULTSWAP_ADDRESS "getPerformanceMetrics()" --rpc-url $RPC_URL
+# Check deployment status
+forge script script/DeployVaultSwapHook.s.sol --dry-run
 
-# Check specific order
-cast call $VAULTSWAP_ADDRESS "getOrder(bytes32)" $ORDER_ID --rpc-url $RPC_URL
+# Simulate deployment
+forge script script/DeployVaultSwapHook.s.sol --fork-url $RPC_URL
+
+# Debug specific function
+cast call <CONTRACT_ADDRESS> "functionName()" --rpc-url $RPC_URL
 ```
 
-#### 2. Check Transactions
+## Monitoring
 
+### On-Chain Monitoring
+- Contract event monitoring
+- Gas usage tracking
+- Transaction success rates
+
+### Off-Chain Monitoring
+- System health checks
+- Performance metrics
+- Error rate monitoring
+
+## Rollback Procedures
+
+### Emergency Pause
 ```bash
-# Check transaction status
-cast tx $TX_HASH --rpc-url $RPC_URL
-
-# Check transaction receipt
-cast receipt $TX_HASH --rpc-url $RPC_URL
+# Pause contract
+cast send <HOOK_ADDRESS> "pause()" \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $RPC_URL
 ```
 
-#### 3. Check Logs
-
+### Contract Upgrade
 ```bash
-# Check contract logs
-cast logs --address $VAULTSWAP_ADDRESS --rpc-url $RPC_URL
+# Deploy new implementation
+forge script script/UpgradeVaultSwapHook.s.sol \
+  --rpc-url $RPC_URL \
+  --broadcast
 
-# Check specific event
-cast logs --address $VAULTSWAP_ADDRESS --topic 0x... --rpc-url $RPC_URL
+# Update proxy
+cast send <PROXY_ADDRESS> "upgradeTo(address)" <NEW_IMPLEMENTATION> \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $RPC_URL
 ```
-
-### Emergency Procedures
-
-#### 1. Pause System
-
-```bash
-# Pause VaultSwap (if pause function exists)
-cast send $VAULTSWAP_ADDRESS "pause()" --private-key $PRIVATE_KEY --rpc-url $RPC_URL
-```
-
-#### 2. Emergency Withdrawal
-
-```bash
-# Emergency withdrawal (if function exists)
-cast send $VAULTSWAP_ADDRESS "emergencyWithdraw()" --private-key $PRIVATE_KEY --rpc-url $RPC_URL
-```
-
-#### 3. Update Configuration
-
-```bash
-# Update configuration
-forge script script/ConfigureVaultSwap.s.sol --rpc-url $RPC_URL --broadcast --private-key $PRIVATE_KEY
-```
-
-## Best Practices
-
-### Security
-
-1. **Use Multi-sig Wallets**: For mainnet deployments
-2. **Test Thoroughly**: On testnets before mainnet
-3. **Monitor Continuously**: Set up monitoring and alerting
-4. **Keep Private Keys Secure**: Use hardware wallets when possible
-
-### Performance
-
-1. **Optimize Gas Usage**: Use efficient data structures
-2. **Batch Operations**: When possible
-3. **Monitor Performance**: Track gas usage and execution time
-4. **Scale Gradually**: Start with small limits and increase
-
-### Maintenance
-
-1. **Regular Updates**: Keep dependencies updated
-2. **Monitor Metrics**: Track system performance
-3. **Backup Configuration**: Keep configuration backups
-4. **Document Changes**: Document all changes and updates
 
 ## Support
 
-### Getting Help
-
-- **Documentation**: Check this guide and architecture docs
-- **Issues**: Create GitHub issues for bugs
-- **Discussions**: Use GitHub discussions for questions
-- **Community**: Join our Discord/Telegram for support
-
-### Reporting Issues
-
-When reporting issues, include:
-
-1. **Network**: Which network you're using
-2. **Version**: Contract version and Foundry version
-3. **Error Message**: Full error message
-4. **Steps to Reproduce**: Detailed steps
-5. **Logs**: Relevant logs and output
-
-### Contributing
-
-1. **Fork Repository**: Fork the repository
-2. **Create Branch**: Create feature branch
-3. **Make Changes**: Implement changes
-4. **Test Changes**: Run tests and verify
-5. **Submit PR**: Submit pull request
-
-## Conclusion
-
-This deployment guide provides comprehensive instructions for deploying VaultSwap Hook across different networks. Follow the steps carefully and always test on testnets before mainnet deployment.
-
-For additional support or questions, please refer to the documentation or contact the development team.
+For deployment issues:
+- Check the [Troubleshooting](#troubleshooting) section
+- Review the [Architecture Guide](ARCHITECTURE.md)
+- Contact the development team

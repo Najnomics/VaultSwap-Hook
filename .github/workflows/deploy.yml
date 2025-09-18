@@ -1,0 +1,79 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+jobs:
+  deploy-testnet:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: testnet
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+    
+    - name: Deploy to Sepolia
+      run: |
+        forge script script/DeployVaultSwapHook.s.sol \
+          --rpc-url ${{ secrets.SEPOLIA_RPC_URL }} \
+          --broadcast \
+          --verify \
+          --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }}
+      env:
+        PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+    
+    - name: Deploy AVS to testnet
+      run: |
+        cd avs
+        make deploy-l1 L1_RPC_URL=${{ secrets.SEPOLIA_RPC_URL }}
+        make deploy-l2 L2_RPC_URL=${{ secrets.ARBITRUM_SEPOLIA_RPC_URL }}
+      env:
+        PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+
+  deploy-mainnet:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: mainnet
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+    
+    - name: Deploy to Mainnet
+      run: |
+        forge script script/DeployVaultSwapHook.s.sol \
+          --rpc-url ${{ secrets.MAINNET_RPC_URL }} \
+          --broadcast \
+          --verify \
+          --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }}
+      env:
+        PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+    
+    - name: Deploy AVS to mainnet
+      run: |
+        cd avs
+        make deploy-l1 L1_RPC_URL=${{ secrets.MAINNET_RPC_URL }}
+        make deploy-l2 L2_RPC_URL=${{ secrets.ARBITRUM_RPC_URL }}
+      env:
+        PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
